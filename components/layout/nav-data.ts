@@ -62,7 +62,6 @@ export const NAV_SECTIONS: readonly NavSection[] = [
 export const FAB_QUICK_ACTIONS = [
   { id: "search",  label: "Search",  Icon: Search, color: "#2563EB" },
   { id: "add",     label: "Add New", Icon: Plus,   color: "#4F46E5" },
-  { id: "alerts",  label: "Alerts",  Icon: Bell,   color: "#06B6D4" },
 ] as const;
 
 export const PLACEHOLDER_USER: CmsUser = {
