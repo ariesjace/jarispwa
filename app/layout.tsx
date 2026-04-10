@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "sonner";
-import { AuthProvider } from "@/lib/useAuth";
 import ServiceWorkerRegister from "@/app/components/ServiceWorkerRegister";
 import "./globals.css";
 
@@ -80,7 +79,7 @@ export default function RootLayout({
         {/* Service Worker (cleaner than inline script) */}
         <ServiceWorkerRegister />
 
-        <AuthProvider>{children}</AuthProvider>
+{children}
 
         {/* Toasts */}
         <Toaster position="top-right" richColors />
