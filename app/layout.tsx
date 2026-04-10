@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   },
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
+    statusBarStyle: "black-translucent", // transparent status bar — app background shows through
     title: "Jaris",
   },
   formatDetection: {
@@ -67,7 +67,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/jarislogo.png" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Jaris" />
       </head>
 

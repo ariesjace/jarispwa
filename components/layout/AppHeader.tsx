@@ -608,119 +608,138 @@ export function AppHeader({
         position: "sticky",
         top: 0,
         zIndex: 100,
-        background: `${TOKEN.bg}f0`,
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
-        borderBottom: `1px solid ${TOKEN.border}`,
-        /* Safe-area top: header background extends behind the status bar /
-           Dynamic Island / Android cutout. Content inside is pushed below it.
-           Mirrors React Native's SafeAreaView behaviour exactly. */
-        paddingTop: "var(--sat, 0px)",
+        // No top-level background — the two zones below each own their background
       }}
     >
-      {/* ── Mobile: greeting row ─────────────────────────────────────── */}
-      {isMobile && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            padding: "10px 16px 6px",
-          }}
-        >
-          <div style={{ minWidth: 0 }}>
-            <p
-              style={{
-                margin: 0,
-                fontSize: 14,
-                fontWeight: 700,
-                color: TOKEN.textPri,
-                lineHeight: 1.3,
-              }}
-            >
-              Hello, {user.name.split(" ")[0]}!
-            </p>
-            <p style={{ margin: 0, fontSize: 11, color: TOKEN.textSec }}>
-              {user.role}
-            </p>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            <ChatButton onClick={onChatOpen} />
-            <NotificationsButton />
-            <AvatarDropdown user={user} onLogout={onLogout} />
-          </div>
-        </div>
-      )}
+      {/* ── Status-bar fill ──────────────────────────────────────────────
+           Height = env(safe-area-inset-top) — exactly the status bar zone.
+           Background = TOKEN.primary (brand blue) so white system icons
+           (clock, battery, signal) remain legible. On devices with no notch
+           --sat resolves to 0px and this div collapses to nothing.
+           This mirrors React Native's:
+             <StatusBar barStyle="light-content" backgroundColor={TOKEN.primary} />
+      ─────────────────────────────────────────────────────────────────── */}
+      <div
+        aria-hidden="true"
+        style={{
+          height: "var(--sat, 0px)",
+          background: TOKEN.primary,
+        }}
+      />
 
-      {/* ── Single tab + actions row ─────────────────────────────────── */}
+      {/* ── Header content ───────────────────────────────────────────── */}
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: isMobile ? "6px 16px 10px" : "10px 20px",
-          minWidth: 0,
+          background: `${TOKEN.bg}f0`,
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          borderBottom: `1px solid ${TOKEN.border}`,
         }}
       >
-        {/* Sidebar toggle — desktop only */}
-        {!isMobile && onSidebarToggle && (
-          <SidebarToggleButton
-            collapsed={sidebarCollapsed}
-            onToggle={onSidebarToggle}
-          />
-        )}
-
-        {/* Divider — desktop only */}
-        {!isMobile && (
-          <div
-            style={{
-              width: 1,
-              height: 22,
-              background: TOKEN.border,
-              flexShrink: 0,
-              borderRadius: 1,
-            }}
-          />
-        )}
-
-        {/* Scrollable pill tabs — takes all remaining space */}
-        <div
-          role="tablist"
-          aria-label={`${section.label} pages`}
-          style={{
-            flex: 1,
-            display: "flex",
-            gap: 6,
-            overflowX: "auto",
-            scrollbarWidth: "none",
-            minWidth: 0,
-          }}
-        >
-          {section.tabs.map((tab) => (
-            <PillTab
-              key={tab}
-              label={tab}
-              isActive={activeTab === tab}
-              onClick={() => onTabChange(tab)}
-            />
-          ))}
-        </div>
-
-        {/* Right actions — desktop only (mobile handled in greeting row) */}
-        {!isMobile && (
+        {/* ── Mobile: greeting row ─────────────────────────────────────── */}
+        {isMobile && (
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 8,
-              flexShrink: 0,
+              justifyContent: "space-between",
+              gap: 12,
+              padding: "10px 16px 6px",
             }}
           >
-            <ChatButton onClick={onChatOpen} />
-            <NotificationsButton />
+            <div style={{ minWidth: 0 }}>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  color: TOKEN.textPri,
+                  lineHeight: 1.3,
+                }}
+              >
+                Hello, {user.name.split(" ")[0]}!
+              </p>
+              <p style={{ margin: 0, fontSize: 11, color: TOKEN.textSec }}>
+                {user.role}
+              </p>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              <ChatButton onClick={onChatOpen} />
+              <NotificationsButton />
+              <AvatarDropdown user={user} onLogout={onLogout} />
+            </div>
           </div>
         )}
+
+        {/* ── Single tab + actions row ─────────────────────────────────── */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: isMobile ? "6px 16px 10px" : "10px 20px",
+            minWidth: 0,
+          }}
+        >
+          {/* Sidebar toggle — desktop only */}
+          {!isMobile && onSidebarToggle && (
+            <SidebarToggleButton
+              collapsed={sidebarCollapsed}
+              onToggle={onSidebarToggle}
+            />
+          )}
+
+          {/* Divider — desktop only */}
+          {!isMobile && (
+            <div
+              style={{
+                width: 1,
+                height: 22,
+                background: TOKEN.border,
+                flexShrink: 0,
+                borderRadius: 1,
+              }}
+            />
+          )}
+
+          {/* Scrollable pill tabs — takes all remaining space */}
+          <div
+            role="tablist"
+            aria-label={`${section.label} pages`}
+            style={{
+              flex: 1,
+              display: "flex",
+              gap: 6,
+              overflowX: "auto",
+              scrollbarWidth: "none",
+              minWidth: 0,
+            }}
+          >
+            {section.tabs.map((tab) => (
+              <PillTab
+                key={tab}
+                label={tab}
+                isActive={activeTab === tab}
+                onClick={() => onTabChange(tab)}
+              />
+            ))}
+          </div>
+
+          {/* Right actions — desktop only (mobile handled in greeting row) */}
+          {!isMobile && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexShrink: 0,
+              }}
+            >
+              <ChatButton onClick={onChatOpen} />
+              <NotificationsButton />
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );
