@@ -40,13 +40,16 @@ export const metadata: Metadata = {
   },
 };
 
-// Viewport (better mobile PWA control)
+// viewport-fit=cover is REQUIRED to make env(safe-area-inset-*) work on iOS
+// Without it the browser masks the notch/home-indicator area and the CSS vars
+// always resolve to 0.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
   themeColor: "#2563EB",
+  viewportFit: "cover", // ← unlocks safe-area-inset env() on iOS PWA
 };
 
 export default function RootLayout({
@@ -76,12 +79,8 @@ export default function RootLayout({
           overflowX: "hidden",
         }}
       >
-        {/* Service Worker (cleaner than inline script) */}
         <ServiceWorkerRegister />
-
-{children}
-
-        {/* Toasts */}
+        {children}
         <Toaster position="top-right" richColors />
       </body>
     </html>

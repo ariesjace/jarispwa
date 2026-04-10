@@ -57,19 +57,20 @@ export function CMSLayout({
   return (
     <>
       <style>{`
-        *::-webkit-scrollbar { display: none; }
-        * { -ms-overflow-style: none; scrollbar-width: none; }
-        body { margin: 0; font-family: 'Inter', 'DM Sans', system-ui, sans-serif; }
-        * { box-sizing: border-box; }
+        body { font-family: 'Inter', 'DM Sans', system-ui, sans-serif; }
       `}</style>
 
       <div
         style={{
-          height: "100vh",
+          /* dvh = dynamic viewport height — shrinks when the browser's
+             address bar is visible on mobile, so the layout never overflows */
+          height: "100dvh",
           display: "flex",
           background: TOKEN.bg,
           color: TOKEN.textPri,
           overflow: "hidden",
+          /* Top safe-area: pushes content below the status bar / Dynamic Island */
+          paddingTop: "var(--sat)",
         }}
       >
         {/* ── DESKTOP: collapsible sidebar ─────────────────────────────── */}
@@ -111,7 +112,11 @@ export function CMSLayout({
             style={{
               flex: 1,
               overflowY: "auto",
-              padding: isMobile ? "0 16px 100px" : "0 24px 24px",
+              /* Mobile: clear the bottom nav (64px) + home indicator safe area
+                 Desktop: standard breathing room */
+              padding: isMobile
+                ? "0 16px calc(64px + var(--sab, 0px))"
+                : "0 24px 24px",
             }}
           >
             <AnimatePresence mode="wait">
@@ -143,7 +148,26 @@ export function CMSLayout({
 
         {/* ── MOBILE: bottom nav + FAB ─────────────────────────────────── */}
         {isMobile && (
-          <BottomNav activeNav={activeNav} onNavChange={handleNavChange} />
+          /* Safe-area wrapper: sits at the bottom of the viewport and adds
+             env(safe-area-inset-bottom) padding so the nav bar clears the
+             iOS home indicator and Android gesture bar on all devices. */
+          <div
+            style={{
+              position: "fixed",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              zIndex: 110,
+              paddingBottom: "var(--sab, 0px)",
+              background: TOKEN.surface,
+              borderTop: `1px solid ${TOKEN.border}`,
+              /* Subtle backdrop so content scrolling beneath doesn't bleed */
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+            }}
+          >
+            <BottomNav activeNav={activeNav} onNavChange={handleNavChange} />
+          </div>
         )}
         {isMobile && <FAB bottomOffset={80} />}
 
