@@ -1,17 +1,19 @@
 "use client";
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  AppHeader — sticky header with scrollable pill tabs
-//  Right side: NotificationsButton + ChatButton (desktop & mobile)
-//  Mobile left: greeting + role
-//  No page title shown
+//  AppHeader — single sticky row
+//
+//  Desktop:  [SidebarToggle] [scrollable pill tabs ···] [Chat] [Notifications]
+//  Mobile:   [Greeting]                                  [Chat] [Notif] [Avatar]
+//            [scrollable pill tabs ···]
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Bell, MessageSquare, LogOut, ChevronDown,
+  Bell, MessageSquare, LogOut,
   CheckCheck, AlertCircle, ShoppingCart, Users,
+  PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { TOKEN, SPRING_FAST, SPRING_MED } from "./tokens";
 import { NavAvatar } from "./NavAvatar";
@@ -60,10 +62,50 @@ function PillTab({ label, isActive, onClick }: PillTabProps) {
         <motion.span
           layoutId="tabBg"
           transition={SPRING_FAST}
-          style={{ position: "absolute", inset: 0, borderRadius: 999, background: TOKEN.secondary }}
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: 999,
+            background: TOKEN.secondary,
+          }}
         />
       )}
       <span style={{ position: "relative", zIndex: 1 }}>{label}</span>
+    </motion.button>
+  );
+}
+
+// ── SidebarToggleButton ───────────────────────────────────────────────────────
+
+interface SidebarToggleButtonProps {
+  collapsed: boolean;
+  onToggle: () => void;
+}
+
+function SidebarToggleButton({ collapsed, onToggle }: SidebarToggleButtonProps) {
+  return (
+    <motion.button
+      whileHover={{ scale: 1.08 }}
+      whileTap={{ scale: 0.9 }}
+      onClick={onToggle}
+      title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      style={{
+        flexShrink: 0,
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        border: `1px solid ${TOKEN.border}`,
+        background: TOKEN.surface,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        color: TOKEN.textSec,
+        transition: "background 0.15s, color 0.15s",
+      }}
+    >
+      {collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
     </motion.button>
   );
 }
@@ -96,7 +138,7 @@ function NotificationsButton() {
   const markAllRead = () => setItems((prev) => prev.map((n) => ({ ...n, unread: false })));
 
   return (
-    <div ref={ref} style={{ position: "relative" }}>
+    <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
       {/* Trigger */}
       <motion.button
         whileHover={{ scale: 1.06 }}
@@ -216,7 +258,11 @@ function NotificationsButton() {
                 <motion.div
                   key={n.id}
                   whileHover={{ background: TOKEN.bg }}
-                  onClick={() => setItems((prev) => prev.map((x) => x.id === n.id ? { ...x, unread: false } : x))}
+                  onClick={() =>
+                    setItems((prev) =>
+                      prev.map((x) => (x.id === n.id ? { ...x, unread: false } : x))
+                    )
+                  }
                   style={{
                     display: "flex",
                     alignItems: "flex-start",
@@ -244,15 +290,49 @@ function NotificationsButton() {
                     <n.Icon size={15} color={n.color} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                      <p style={{ margin: 0, fontSize: 12.5, fontWeight: n.unread ? 700 : 600, color: TOKEN.textPri, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 8,
+                      }}
+                    >
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: 12.5,
+                          fontWeight: n.unread ? 700 : 600,
+                          color: TOKEN.textPri,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
                         {n.title}
                       </p>
                       {n.unread && (
-                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: TOKEN.primary, flexShrink: 0 }} />
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: "50%",
+                            background: TOKEN.primary,
+                            flexShrink: 0,
+                          }}
+                        />
                       )}
                     </div>
-                    <p style={{ margin: "2px 0 0", fontSize: 11.5, color: TOKEN.textSec, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <p
+                      style={{
+                        margin: "2px 0 0",
+                        fontSize: 11.5,
+                        color: TOKEN.textSec,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
                       {n.meta}
                     </p>
                     <p style={{ margin: "3px 0 0", fontSize: 10.5, color: TOKEN.textSec, opacity: 0.7 }}>
@@ -306,6 +386,7 @@ function ChatButton({ onClick }: ChatButtonProps) {
       aria-label={`Chats${UNREAD_CHATS ? ` (${UNREAD_CHATS} unread)` : ""}`}
       style={{
         position: "relative",
+        flexShrink: 0,
         width: 36,
         height: 36,
         borderRadius: 10,
@@ -374,12 +455,16 @@ function AvatarDropdown({ user, onLogout }: AvatarDropdownProps) {
         onClick={() => setOpen((v) => !v)}
         aria-label="Account menu"
         aria-expanded={open}
-        style={{ display: "flex", alignItems: "center", gap: 4, padding: 0, border: "none", background: "transparent", cursor: "pointer" }}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          padding: 0,
+          border: "none",
+          background: "transparent",
+          cursor: "pointer",
+        }}
       >
         <NavAvatar initials={user.initials} size={34} />
-        <motion.span animate={{ rotate: open ? 180 : 0 }} transition={SPRING_FAST} style={{ display: "flex", color: TOKEN.textSec }}>
-          <ChevronDown size={13} />
-        </motion.span>
       </motion.button>
 
       <AnimatePresence>
@@ -404,13 +489,41 @@ function AvatarDropdown({ user, onLogout }: AvatarDropdownProps) {
               zIndex: 200,
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 16px 14px", background: TOKEN.bg, borderBottom: `1px solid ${TOKEN.border}` }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "16px 16px 14px",
+                background: TOKEN.bg,
+                borderBottom: `1px solid ${TOKEN.border}`,
+              }}
+            >
               <NavAvatar initials={user.initials} size={40} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: TOKEN.textPri, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 13.5,
+                    fontWeight: 700,
+                    color: TOKEN.textPri,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
                   {user.name}
                 </p>
-                <p style={{ margin: "2px 0 0", fontSize: 11, color: TOKEN.textSec, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <p
+                  style={{
+                    margin: "2px 0 0",
+                    fontSize: 11,
+                    color: TOKEN.textSec,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
                   {user.role}
                 </p>
               </div>
@@ -437,7 +550,18 @@ function AvatarDropdown({ user, onLogout }: AvatarDropdownProps) {
                   textAlign: "left",
                 }}
               >
-                <div style={{ width: 28, height: 28, borderRadius: 8, background: `${TOKEN.danger}18`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <div
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 8,
+                    background: `${TOKEN.danger}18`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
                   <LogOut size={13} color={TOKEN.dangerText} />
                 </div>
                 Sign out
@@ -460,6 +584,9 @@ export interface AppHeaderProps {
   onChatOpen?: () => void;
   user: CmsUser;
   isMobile?: boolean;
+  /** Desktop only — controlled by CMSLayout */
+  sidebarCollapsed?: boolean;
+  onSidebarToggle?: () => void;
 }
 
 export function AppHeader({
@@ -470,6 +597,8 @@ export function AppHeader({
   onChatOpen,
   user,
   isMobile = false,
+  sidebarCollapsed = false,
+  onSidebarToggle,
 }: AppHeaderProps) {
   const section = NAV_SECTIONS.find((s) => s.id === activeNav)!;
 
@@ -485,58 +614,109 @@ export function AppHeader({
         borderBottom: `1px solid ${TOKEN.border}`,
       }}
     >
-      {/* Top row */}
+      {/* ── Mobile: greeting row ─────────────────────────────────────── */}
+      {isMobile && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            padding: "10px 16px 6px",
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 14,
+                fontWeight: 700,
+                color: TOKEN.textPri,
+                lineHeight: 1.3,
+              }}
+            >
+              Hello, {user.name.split(" ")[0]}!
+            </p>
+            <p style={{ margin: 0, fontSize: 11, color: TOKEN.textSec }}>
+              {user.role}
+            </p>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <ChatButton onClick={onChatOpen} />
+            <NotificationsButton />
+            <AvatarDropdown user={user} onLogout={onLogout} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Single tab + actions row ─────────────────────────────────── */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          padding: "10px 20px 8px",
-        }}
-      >
-        {/* Left: greeting on mobile, empty spacer on desktop */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {isMobile && (
-            <>
-              <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: TOKEN.textPri, lineHeight: 1.3 }}>
-                Hello, {user.name.split(" ")[0]}!
-              </p>
-              <p style={{ margin: 0, fontSize: 11, color: TOKEN.textSec }}>
-                {user.role}
-              </p>
-            </>
-          )}
-        </div>
-
-        {/* Right: chat + notifications + avatar (mobile only) */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          <ChatButton onClick={onChatOpen} />
-          <NotificationsButton />
-          {isMobile && <AvatarDropdown user={user} onLogout={onLogout} />}
-        </div>
-      </div>
-
-      {/* Scrollable tab row */}
-      <div
-        role="tablist"
-        aria-label={`${section.label} pages`}
-        style={{
-          display: "flex",
           gap: 8,
-          padding: "0 20px 10px",
-          overflowX: "auto",
-          scrollbarWidth: "none",
+          padding: isMobile ? "6px 16px 10px" : "10px 20px",
+          minWidth: 0,
         }}
       >
-        {section.tabs.map((tab) => (
-          <PillTab
-            key={tab}
-            label={tab}
-            isActive={activeTab === tab}
-            onClick={() => onTabChange(tab)}
+        {/* Sidebar toggle — desktop only */}
+        {!isMobile && onSidebarToggle && (
+          <SidebarToggleButton
+            collapsed={sidebarCollapsed}
+            onToggle={onSidebarToggle}
           />
-        ))}
+        )}
+
+        {/* Divider — desktop only */}
+        {!isMobile && (
+          <div
+            style={{
+              width: 1,
+              height: 22,
+              background: TOKEN.border,
+              flexShrink: 0,
+              borderRadius: 1,
+            }}
+          />
+        )}
+
+        {/* Scrollable pill tabs — takes all remaining space */}
+        <div
+          role="tablist"
+          aria-label={`${section.label} pages`}
+          style={{
+            flex: 1,
+            display: "flex",
+            gap: 6,
+            overflowX: "auto",
+            scrollbarWidth: "none",
+            minWidth: 0,
+          }}
+        >
+          {section.tabs.map((tab) => (
+            <PillTab
+              key={tab}
+              label={tab}
+              isActive={activeTab === tab}
+              onClick={() => onTabChange(tab)}
+            />
+          ))}
+        </div>
+
+        {/* Right actions — desktop only (mobile handled in greeting row) */}
+        {!isMobile && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexShrink: 0,
+            }}
+          >
+            <ChatButton onClick={onChatOpen} />
+            <NotificationsButton />
+          </div>
+        )}
       </div>
     </header>
   );

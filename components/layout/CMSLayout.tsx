@@ -3,8 +3,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  CMSLayout — full responsive shell
 //
-//  Desktop  (≥1024 px):  Sidebar (collapsible) + AppHeader + content
+//  Desktop  (≥1024 px):  Sidebar (controlled collapse) + AppHeader + content
 //  Mobile   (< 1024 px): AppHeader (greeting + avatar dropdown) + BottomNav + FAB
+//
+//  sidebarCollapsed is lifted here so the AppHeader toggle button
+//  and the Sidebar itself share the same source of truth.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect } from "react";
@@ -33,6 +36,8 @@ export function CMSLayout({
   const [activeTab, setActiveTab] = useState("All Products");
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  // Sidebar collapsed state lifted here so AppHeader toggle is in sync
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 1023px)");
@@ -60,7 +65,7 @@ export function CMSLayout({
 
       <div
         style={{
-          minHeight: "100vh",
+          height: "100vh",
           display: "flex",
           background: TOKEN.bg,
           color: TOKEN.textPri,
@@ -74,6 +79,8 @@ export function CMSLayout({
             onNavChange={handleNavChange}
             onLogout={() => setLogoutOpen(true)}
             user={user}
+            collapsed={sidebarCollapsed}
+            onCollapsedChange={setSidebarCollapsed}
           />
         )}
 
@@ -95,6 +102,8 @@ export function CMSLayout({
             onChatOpen={onChatOpen}
             user={user}
             isMobile={isMobile}
+            sidebarCollapsed={sidebarCollapsed}
+            onSidebarToggle={() => setSidebarCollapsed((v) => !v)}
           />
 
           {/* Content area */}
@@ -102,7 +111,7 @@ export function CMSLayout({
             style={{
               flex: 1,
               overflowY: "auto",
-              paddingBottom: isMobile ? 100 : 24,
+              padding: isMobile ? "0 16px 100px" : "0 24px 24px",
             }}
           >
             <AnimatePresence mode="wait">
@@ -113,7 +122,7 @@ export function CMSLayout({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
                   transition={EASE_OUT}
-                  style={{ padding: 24, minHeight: "60vh" }}
+                  style={{ padding: isMobile ? 16 : 0, minHeight: "60vh" }}
                 >
                   {children({ activeNav, activeTab })}
                 </motion.div>
@@ -125,7 +134,7 @@ export function CMSLayout({
                   exit={{ opacity: 0, y: -8 }}
                   transition={EASE_OUT}
                   role="main"
-                  style={{ padding: 24, minHeight: "calc(100vh - 200px)" }}
+                  style={{ padding: isMobile ? 16 : 0, minHeight: "calc(100vh - 200px)" }}
                 />
               )}
             </AnimatePresence>
