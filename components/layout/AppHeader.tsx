@@ -612,6 +612,10 @@ export function AppHeader({
         backdropFilter: "blur(16px)",
         WebkitBackdropFilter: "blur(16px)",
         borderBottom: `1px solid ${TOKEN.border}`,
+        /* Safe-area top: header background extends behind the status bar /
+           Dynamic Island / Android cutout. Content inside is pushed below it.
+           Mirrors React Native's SafeAreaView behaviour exactly. */
+        paddingTop: "var(--sat, 0px)",
       }}
     >
       {/* ── Mobile: greeting row ─────────────────────────────────────── */}

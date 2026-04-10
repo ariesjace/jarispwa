@@ -62,15 +62,11 @@ export function CMSLayout({
 
       <div
         style={{
-          /* dvh = dynamic viewport height — shrinks when the browser's
-             address bar is visible on mobile, so the layout never overflows */
           height: "100dvh",
           display: "flex",
           background: TOKEN.bg,
           color: TOKEN.textPri,
           overflow: "hidden",
-          /* Top safe-area: pushes content below the status bar / Dynamic Island */
-          paddingTop: "var(--sat)",
         }}
       >
         {/* ── DESKTOP: collapsible sidebar ─────────────────────────────── */}
