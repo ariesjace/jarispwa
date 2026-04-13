@@ -9,7 +9,9 @@ import {
   Edit2, Trash2, FileText, Package, ChevronLeft, ChevronRight, CheckCircle2,
   ListFilter,
   Check,
-  ChevronDown
+  ChevronDown,
+  MoreHorizontal,
+  X
 } from "lucide-react";
 import {
   useReactTable,
@@ -308,13 +310,13 @@ export default function AllProductsPage() {
   return (
     <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto", display: "flex", flexDirection: "column", minHeight: "100%" }}>
       
-      {/* PAGE HEADER */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-         <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: TOKEN.textPri }}>All Products</h1>
-      </div>
-      
       {/* STICKY TOP CONTROLS (SEARCH, FILTERS, BULK ACTIONS) */}
-      <div style={{ position: "sticky", top: 0, zIndex: 40, background: TOKEN.bg, paddingBottom: 16 }}>
+      <div style={{ position: "sticky", top: 0, zIndex: 40, background: TOKEN.bg, paddingTop: 16, paddingBottom: 16 }}>
+        
+        {/* PAGE HEADER */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: TOKEN.textPri }}>All Products</h1>
+        </div>
         
         {/* DESKTOP BULK ACTIONS */}
         {!isMobile && isBulk && (
@@ -337,7 +339,7 @@ export default function AllProductsPage() {
           </div>
         )}
 
-        {/* MOBILE BULK ACTIONS (Improves layout, uses horizontal scrolling items) */}
+        {/* MOBILE BULK ACTIONS (Improves layout, uses dropdown menu) */}
         {isMobile && isBulk && (
           <div style={{
              background: TOKEN.surface, border: `1px solid ${TOKEN.primary}`,
@@ -355,30 +357,35 @@ export default function AllProductsPage() {
                     Select All
                   </label>
                 </div>
-             </div>
-             
-             {/* Horizontally scrollable chip actions */}
-             <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch", marginLeft: -4, paddingLeft: 4 }}>
-                <button style={{ ...actionBtnStyle, flexShrink: 0, fontWeight: 700, padding: "10px 16px", borderRadius: 10, background: TOKEN.bg }} onClick={() => table.resetRowSelection()}>
-                  Cancel
-                </button>
-                <button style={{ ...actionBtnStyle, flexShrink: 0, fontWeight: 700, padding: "10px 16px", borderRadius: 10, background: TOKEN.bg }}>
-                  Assign Website
-                </button>
-                <button style={{ ...actionBtnStyle, flexShrink: 0, fontWeight: 700, padding: "10px 16px", borderRadius: 10, background: TOKEN.bg }}>
-                  Generate TDS
-                </button>
-                <button style={{ ...actionBtnStyle, flexShrink: 0, fontWeight: 700, padding: "10px 16px", borderRadius: 10, background: TOKEN.dangerBg, color: TOKEN.dangerText, borderColor: `${TOKEN.danger}30` }} onClick={handleBulkDelete}>
-                   Delete
-                </button>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <button style={{ background: "none", border: "none", padding: 6, cursor: "pointer", color: TOKEN.textSec, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => table.resetRowSelection()}>
+                         <X size={20} />
+                    </button>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <button style={{ background: "none", border: "none", padding: 6, cursor: "pointer", color: TOKEN.textPri, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                 <MoreHorizontal size={20} />
+                            </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48" style={{ background: TOKEN.surface, border: `1px solid ${TOKEN.border}`, borderRadius: 12, padding: "6px", boxShadow: "0 10px 25px rgba(0,0,0,0.1)", zIndex: 100 }}>
+                            <DropdownMenuItem style={{ fontWeight: 600, color: TOKEN.textPri, cursor: "pointer" }}>Assign Website</DropdownMenuItem>
+                            <DropdownMenuItem style={{ fontWeight: 600, color: TOKEN.textPri, cursor: "pointer" }}>Generate TDS</DropdownMenuItem>
+                            <DropdownMenuSeparator style={{ background: TOKEN.border, margin: "4px 0" }} />
+                            <DropdownMenuItem style={{ fontWeight: 700, color: TOKEN.danger, cursor: "pointer" }} onClick={handleBulkDelete}>
+                               Delete Selected
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
              </div>
           </div>
         )}
 
         {/* SEARCH AND FILTERS (Hidden when bulk selected for clean UI) */}
         {!isBulk && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ position: "relative", flex: 1, minWidth: isMobile ? "100%" : 280, maxWidth: isMobile ? "100%" : 360 }}>
+          <div style={{ display: "flex", flexWrap: isMobile ? "nowrap" : "wrap", gap: 12, alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ position: "relative", flex: 1, minWidth: 0, maxWidth: isMobile ? "none" : 360 }}>
                   <Search size={16} color={TOKEN.textSec} style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
                   <input
                       type="text"
@@ -393,15 +400,25 @@ export default function AllProductsPage() {
                   />
               </div>
 
-              <div style={{ display: "flex", gap: 8, width: isMobile ? "100%" : "auto" }}>
+              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                   <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                          <button style={{ ...filterBtnStyle, flex: isMobile ? 1 : "auto", justifyContent: "center" }}>
-                              <ListFilter size={16} /> Filter <ChevronDown size={14} />
-                              {activeFamilyFilter && <span style={{ marginLeft: 4, width: 6, height: 6, borderRadius: "50%", background: TOKEN.primary }} />}
+                          <button style={{ ...filterBtnStyle, position: "relative", padding: isMobile ? "10px 12px" : "10px 16px" }}>
+                              <ListFilter size={16} /> 
+                              {!isMobile && <>Filter <ChevronDown size={14} /></>}
+                              {activeFamilyFilter && (
+                                <span style={{ 
+                                  position: isMobile ? "absolute" : "static",
+                                  top: isMobile ? 8 : "auto", 
+                                  right: isMobile ? 8 : "auto",
+                                  marginLeft: isMobile ? 0 : 4, 
+                                  width: 8, height: 8, borderRadius: "50%", background: TOKEN.primary,
+                                  border: isMobile ? `2px solid ${TOKEN.surface}` : "none"
+                                }} />
+                              )}
                           </button>
                       </DropdownMenuTrigger>
-                      <DropdownMenuContent align={isMobile ? "center" : "end"} className="w-56">
+                      <DropdownMenuContent align={isMobile ? "end" : "end"} className="w-56">
                           <DropdownMenuLabel>Product Family</DropdownMenuLabel>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem onClick={() => table.getColumn("productFamily")?.setFilterValue("")}>
@@ -482,9 +499,9 @@ export default function AllProductsPage() {
           </div>
       </div>
 
-      {/* MOBILE SCROLLABLE CONTENT (CARDS) */}
+      {/* MOBILE SCROLLABLE CONTENT (CARDS) - REMOVED PAGINATION LOGIC ON MOBILE */}
       <div className="mobile-view" style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 100 }}>
-          {table.getRowModel().rows.map((row) => {
+          {table.getFilteredRowModel().rows.map((row) => {
               const product = row.original;
               const isSelected = row.getIsSelected();
               const codes = getFilledItemCodes(resolveItemCodes(product));
@@ -555,13 +572,6 @@ export default function AllProductsPage() {
                 </div>
               );
           })}
-      </div>
-
-      {/* MOBILE PAGINATION (STICKY BOTTOM) */}
-      <div className="mobile-view" style={{ position: "fixed", bottom: 64, left: 0, right: 0, zIndex: 40, padding: "12px 16px", background: TOKEN.surface, borderTop: `1px solid ${TOKEN.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <button style={pageBtnStyle} onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}><ChevronLeft size={16}/></button>
-          <span style={{ fontSize: 13, color: TOKEN.textSec, fontWeight: 600 }}>Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount() || 1}</span>
-          <button style={pageBtnStyle} onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}><ChevronRight size={16}/></button>
       </div>
 
       {isMobile && !isBulk && (

@@ -13,6 +13,7 @@
     "class-variance-authority": "^0.7.1",
     "cloudinary": "^2.9.0",
     "firebase": "^12.12.0",
+    "firebase-admin": "^12.0.0",
     "lucide-react": "^1.8.0",
     "motion": "^12.38.0",
     "next": "16.2.3",
@@ -21,8 +22,7 @@
     "react-dom": "19.2.4",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
-    "toaster": "^0.1.2",
-    "@tanstack/react-table": "^8.20.5"
+    "toaster": "^0.1.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
