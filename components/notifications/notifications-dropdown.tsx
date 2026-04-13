@@ -1,29 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { format } from "date-fns";
 import {
   Bell,
   CheckCircle2,
   XCircle,
-  Eye,
-  Loader2,
-  Inbox,
   Clock,
   Package,
+  Edit2,
+  Trash2,
+  Plus,
+  Eye,
   ExternalLink,
+  Inbox,
 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { motion, AnimatePresence } from "framer-motion";
+import { TOKEN, SPRING_MED } from "@/components/layout/tokens";
 import { toast } from "sonner";
-import { TOKEN } from "@/components/layout/tokens";
 
 import { db } from "@/lib/firebase";
 import {
@@ -51,7 +45,7 @@ import {
   RemarksAction,
 } from "./remarks-confirm-dialog";
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function relativeTime(ts: Timestamp | null | undefined): string {
   if (!ts) return "";
@@ -68,46 +62,6 @@ function relativeTime(ts: Timestamp | null | undefined): string {
   }
 }
 
-function TypeChip({ type }: { type: string }) {
-  const styles: Record<string, string> = {
-    create: "bg-sky-100 text-sky-700",
-    update: "bg-violet-100 text-violet-700",
-    delete: "bg-rose-100 text-rose-700",
-  };
-  return (
-    <span
-      className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
-        styles[type] ?? "bg-muted text-muted-foreground"
-      }`}
-    >
-      {type}
-    </span>
-  );
-}
-
-function StatusChip({ status }: { status: string }) {
-  if (status === "pending")
-    return (
-      <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
-        <Clock className="w-2.5 h-2.5" />
-        Pending
-      </span>
-    );
-  if (status === "approved")
-    return (
-      <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
-        <CheckCircle2 className="w-2.5 h-2.5" />
-        Approved
-      </span>
-    );
-  return (
-    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">
-      <XCircle className="w-2.5 h-2.5" />
-      Rejected
-    </span>
-  );
-}
-
 function getRequestDisplayName(req: PendingRequest): string {
   const meta = req.meta ?? {};
   if (meta.productName) return String(meta.productName);
@@ -116,186 +70,291 @@ function getRequestDisplayName(req: PendingRequest): string {
   return d?.itemDescription || d?.name || d?.itemCode || req.resourceId || "—";
 }
 
-function getRequestSubtitle(req: PendingRequest): string | null {
+function getRequestSubtitle(req: PendingRequest): string {
   const meta = req.meta ?? {};
   const parts: string[] = [];
   if (meta.litItemCode) parts.push(String(meta.litItemCode));
-  if (meta.ecoItemCode && meta.ecoItemCode !== meta.litItemCode)
-    parts.push(String(meta.ecoItemCode));
+  else if (meta.ecoItemCode) parts.push(String(meta.ecoItemCode));
   if (meta.productFamily) parts.push(String(meta.productFamily));
-  return parts.length > 0 ? parts.join(" · ") : null;
+  return parts.join(" · ");
 }
 
-// ─── Verifier notification row ──────────────────────────────────────────────────
+function typeConfig(type: string): {
+  Icon: React.ElementType;
+  color: string;
+  label: string;
+} {
+  if (type === "create")
+    return { Icon: Plus, color: "#0891b2", label: "Create" };
+  if (type === "delete")
+    return { Icon: Trash2, color: TOKEN.danger, label: "Delete" };
+  return { Icon: Edit2, color: TOKEN.secondary, label: "Update" };
+}
 
-function VerifierNotificationItem({
+function statusConfig(status: string): { color: string; label: string } {
+  if (status === "approved") return { color: "#22c55e", label: "Approved" };
+  if (status === "rejected") return { color: TOKEN.danger, label: "Rejected" };
+  return { color: "#f59e0b", label: "Pending" };
+}
+
+// ─── Notification Item ────────────────────────────────────────────────────────
+
+function NotificationItem({
   req,
+  isVerifier,
   onPreview,
-  onRequestAction,
+  onAction,
 }: {
   req: PendingRequest;
+  isVerifier: boolean;
   onPreview: (r: PendingRequest) => void;
-  onRequestAction: (target: RemarksTarget) => void;
+  onAction: (target: RemarksTarget) => void;
 }) {
   const displayName = getRequestDisplayName(req);
   const subtitle = getRequestSubtitle(req);
+  const { Icon, color } = typeConfig(req.type);
+  const status = statusConfig(req.status);
+  const isPending = req.status === "pending";
 
   return (
-    <div
-      className="px-3 py-2.5 hover:bg-muted/40 transition-colors border-b last:border-b-0 cursor-pointer"
+    <motion.div
+      whileHover={{ background: TOKEN.bg }}
       onClick={() => onPreview(req)}
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 12,
+        padding: "12px 16px",
+        borderBottom: `1px solid ${TOKEN.border}`,
+        cursor: "pointer",
+        background: isPending ? `${TOKEN.primary}05` : "transparent",
+        transition: "background 0.15s",
+      }}
     >
-      <div className="flex items-start gap-2">
-        <div className="mt-0.5 h-7 w-7 rounded-full bg-muted flex items-center justify-center shrink-0">
-          <Package className="w-3.5 h-3.5 text-muted-foreground" />
-        </div>
-        <div className="flex-1 min-w-0 space-y-1">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <TypeChip type={req.type} />
-            <span className="text-[10px] text-muted-foreground truncate">
-              {req.resource}
-            </span>
-          </div>
-          {/* Product name — truncated to prevent layout break */}
-          <p className="text-xs font-medium leading-tight truncate max-w-full">
-            {displayName}
-          </p>
-          {subtitle && (
-            <p className="text-[10px] text-muted-foreground font-mono truncate">
-              {subtitle}
-            </p>
-          )}
-          <div className="flex items-center justify-between gap-1 flex-wrap">
-            <p className="text-[10px] text-muted-foreground shrink-0">
-              {req.requestedByName || "Unknown"} · {relativeTime(req.createdAt)}
-            </p>
-            {/* Action buttons — stop propagation so click doesn't open preview */}
-            <div
-              className="flex gap-1 shrink-0"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Preview */}
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-                onClick={() => onPreview(req)}
-              >
-                <Eye className="w-3 h-3" />
-              </Button>
-
-              {/* Approve */}
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-6 px-2 text-[10px] gap-1 border-emerald-200 text-emerald-600 hover:bg-emerald-50"
-                onClick={() =>
-                  onRequestAction({ request: req, action: "approve" })
-                }
-              >
-                <CheckCircle2 className="w-3 h-3" />
-                Approve
-              </Button>
-
-              {/* Reject */}
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-6 px-2 text-[10px] gap-1 border-rose-200 text-rose-600 hover:bg-rose-50"
-                onClick={() =>
-                  onRequestAction({ request: req, action: "reject" })
-                }
-              >
-                <XCircle className="w-3 h-3" />
-                Reject
-              </Button>
-            </div>
-          </div>
-        </div>
+      {/* Type icon */}
+      <div
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: 10,
+          background: `${color}18`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          marginTop: 1,
+        }}
+      >
+        <Icon size={15} color={color} />
       </div>
-    </div>
-  );
-}
 
-// ─── Submitter notification row (read-only) ─────────────────────────────────────
-
-function SubmitterNotificationItem({
-  req,
-  onPreview,
-}: {
-  req: PendingRequest;
-  onPreview: (r: PendingRequest) => void;
-}) {
-  const displayName = getRequestDisplayName(req);
-  const subtitle = getRequestSubtitle(req);
-
-  return (
-    <div
-      className="px-3 py-2.5 hover:bg-muted/40 transition-colors border-b last:border-b-0 cursor-pointer"
-      onClick={() => onPreview(req)}
-    >
-      <div className="flex items-start gap-2">
-        <div className="mt-0.5 h-7 w-7 rounded-full bg-muted flex items-center justify-center shrink-0">
-          <Package className="w-3.5 h-3.5 text-muted-foreground" />
-        </div>
-        <div className="flex-1 min-w-0 space-y-1">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <TypeChip type={req.type} />
-            <StatusChip status={req.status} />
-          </div>
-          {/* Product name — truncated */}
-          <p className="text-xs font-medium leading-tight truncate max-w-full">
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Top row: name + unread dot */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12.5,
+              fontWeight: isPending ? 700 : 600,
+              color: TOKEN.textPri,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              flex: 1,
+            }}
+          >
             {displayName}
           </p>
-          {subtitle && (
-            <p className="text-[10px] text-muted-foreground font-mono truncate">
-              {subtitle}
-            </p>
+          {isPending && (
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: TOKEN.primary,
+                flexShrink: 0,
+              }}
+            />
           )}
-          <div className="flex items-center justify-between">
-            <p className="text-[10px] text-muted-foreground">
-              {relativeTime(req.createdAt)}
-            </p>
-            {req.status !== "pending" && req.reviewedByName && (
-              <p className="text-[10px] text-muted-foreground">
-                by {req.reviewedByName}
-              </p>
-            )}
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-              onClick={(e) => {
-                e.stopPropagation();
-                onPreview(req);
+        </div>
+
+        {/* Subtitle / item codes */}
+        {subtitle && (
+          <p
+            style={{
+              margin: "2px 0 0",
+              fontSize: 11,
+              color: TOKEN.textSec,
+              fontFamily: "monospace",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {subtitle}
+          </p>
+        )}
+
+        {/* Meta row */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginTop: 4,
+            gap: 8,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {/* Type chip */}
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                padding: "1px 5px",
+                borderRadius: 4,
+                background: `${color}18`,
+                color,
               }}
             >
-              <Eye className="w-3 h-3" />
-            </Button>
+              {req.type}
+            </span>
+
+            {/* Status chip (for submitters or resolved) */}
+            {(!isVerifier || !isPending) && (
+              <span
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  padding: "1px 5px",
+                  borderRadius: 4,
+                  background: `${status.color}18`,
+                  color: status.color,
+                }}
+              >
+                {status.label}
+              </span>
+            )}
+
+            <span style={{ fontSize: 11, color: TOKEN.textSec, opacity: 0.7 }}>
+              {isVerifier
+                ? req.requestedByName
+                  ? `${req.requestedByName} · `
+                  : ""
+                : ""}
+              {relativeTime(req.createdAt)}
+            </span>
           </div>
+
+          {/* Action buttons — verifier + pending only */}
+          {isVerifier && isPending && (
+            <div
+              style={{ display: "flex", gap: 4, flexShrink: 0 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <motion.button
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.92 }}
+                onClick={() => onAction({ request: req, action: "approve" })}
+                title="Approve"
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#dcfce7",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                }}
+              >
+                <CheckCircle2 size={13} color="#16a34a" />
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.92 }}
+                onClick={() => onAction({ request: req, action: "reject" })}
+                title="Reject"
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 6,
+                  border: "none",
+                  background: "#fee2e2",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                }}
+              >
+                <XCircle size={13} color="#dc2626" />
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.92 }}
+                onClick={() => onPreview(req)}
+                title="Preview"
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 6,
+                  border: "none",
+                  background: TOKEN.bg,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                }}
+              >
+                <Eye size={13} color={TOKEN.textSec} />
+              </motion.button>
+            </div>
+          )}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
-// ─── Main dropdown ──────────────────────────────────────────────────────────────
+// ─── Main Dropdown ────────────────────────────────────────────────────────────
 
 export function NotificationsDropdown() {
   const { user } = useAuth();
   const [requests, setRequests] = useState<PendingRequest[]>([]);
   const [preview, setPreview] = useState<PendingRequest | null>(null);
   const [open, setOpen] = useState(false);
-
   const [remarksTarget, setRemarksTarget] = useState<RemarksTarget | null>(
     null,
   );
+  const ref = useRef<HTMLDivElement>(null);
 
   const visible = canSeeNotifications(user);
   const isVerifier = hasAccess(user, "verify", "products");
   const isSubmitter = !isVerifier && hasAccess(user, "write", "products");
   const reviewer = { uid: user?.uid ?? "", name: user?.name };
 
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  // Firebase subscription
   useEffect(() => {
     if (!visible || !user) return;
 
@@ -325,7 +384,7 @@ export function NotificationsDropdown() {
 
   if (!visible) return null;
 
-  const badgeCount = isVerifier
+  const pendingCount = isVerifier
     ? requests.length
     : requests.filter((r) => r.status === "pending").length;
 
@@ -362,29 +421,35 @@ export function NotificationsDropdown() {
 
   return (
     <>
-      <DropdownMenu open={open} onOpenChange={setOpen}>
-        <DropdownMenuTrigger asChild>
-          <button
-            aria-label="Notifications"
-            style={{
-              position: "relative",
-              flexShrink: 0,
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              border: `1px solid ${TOKEN.border}`,
-              background: open ? `${TOKEN.primary}10` : TOKEN.surface,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              color: open ? TOKEN.primary : TOKEN.textSec,
-              transition: "background 0.15s, color 0.15s",
-            }}
-          >
-            <Bell size={16} />
-            {badgeCount > 0 && (
-              <span style={{
+      <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
+        {/* ── Trigger ── */}
+        <motion.button
+          whileHover={{ scale: 1.06 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={() => setOpen((v) => !v)}
+          aria-label={`Notifications${pendingCount ? ` (${pendingCount} pending)` : ""}`}
+          aria-expanded={open}
+          style={{
+            position: "relative",
+            width: 36,
+            height: 36,
+            borderRadius: 10,
+            border: `1px solid ${TOKEN.border}`,
+            background: open ? `${TOKEN.primary}10` : TOKEN.surface,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            color: open ? TOKEN.primary : TOKEN.textSec,
+            transition: "background 0.15s, color 0.15s",
+          }}
+        >
+          <Bell size={16} />
+          {pendingCount > 0 && (
+            <motion.span
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              style={{
                 position: "absolute",
                 top: 5,
                 right: 5,
@@ -393,119 +458,188 @@ export function NotificationsDropdown() {
                 borderRadius: "50%",
                 background: TOKEN.danger,
                 border: `2px solid ${TOKEN.surface}`,
-              }} />
-            )}
-          </button>
-        </DropdownMenuTrigger>
+              }}
+            />
+          )}
+        </motion.button>
 
-        {/*
-          Increased from w-80 (320px) to w-[26rem] (416px) so the
-          Approve / Reject buttons always have enough room to render
-          side-by-side without wrapping or overflowing.
-        */}
-        <DropdownMenuContent
-          align="end"
-          className="w-[26rem] p-0 shadow-lg"
-          sideOffset={8}
-        >
-          {/* Sticky header */}
-          <div className="sticky top-0 z-10 bg-popover border-b">
-            <div className="flex items-center justify-between px-3 py-2.5">
-              <div className="flex items-center gap-2">
-                <Bell className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-sm font-semibold">
-                  {isVerifier ? "Pending Approvals" : "My Requests"}
-                </span>
-                {badgeCount > 0 && (
-                  <Badge
-                    variant="secondary"
-                    className="text-[10px] font-bold h-5 px-1.5"
+        {/* ── Dropdown panel ── */}
+        <AnimatePresence>
+          {open && (
+            <motion.div
+              key="notif-panel"
+              initial={{ opacity: 0, scale: 0.93, y: -6 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.93, y: -6 }}
+              transition={SPRING_MED}
+              style={{
+                position: "absolute",
+                top: "calc(100% + 10px)",
+                right: 0,
+                width: 360,
+                background: TOKEN.surface,
+                borderRadius: 18,
+                border: `1px solid ${TOKEN.border}`,
+                boxShadow: "0 16px 48px -8px rgba(15,23,42,0.16)",
+                overflow: "hidden",
+                transformOrigin: "top right",
+                zIndex: 200,
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "14px 16px 12px",
+                  borderBottom: `1px solid ${TOKEN.border}`,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 13.5,
+                      fontWeight: 700,
+                      color: TOKEN.textPri,
+                    }}
                   >
-                    {badgeCount}
-                  </Badge>
+                    {isVerifier ? "Pending Approvals" : "My Requests"}
+                  </p>
+                  {pendingCount > 0 && (
+                    <span
+                      style={{
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        color: "#fff",
+                        background: TOKEN.danger,
+                        borderRadius: 999,
+                        padding: "1px 7px",
+                      }}
+                    >
+                      {pendingCount}
+                    </span>
+                  )}
+                </div>
+                {isVerifier && (
+                  <a
+                    href="/products/requests"
+                    onClick={() => setOpen(false)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                      color: TOKEN.primary,
+                      textDecoration: "none",
+                    }}
+                  >
+                    View all <ExternalLink size={11} />
+                  </a>
                 )}
               </div>
-              {isVerifier && (
-                <a
-                  href="/products/requests"
-                  className="flex items-center gap-1 text-[11px] text-primary hover:underline font-medium"
-                  onClick={() => setOpen(false)}
-                >
-                  View all
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              )}
-            </div>
-          </div>
 
-          {/* Content */}
-          {requests.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 py-8 text-muted-foreground">
-              <Inbox className="w-8 h-8 opacity-30" />
-              <p className="text-xs">
-                {isVerifier
-                  ? "No pending requests"
-                  : "No requests submitted yet"}
-              </p>
-            </div>
-          ) : (
-            <ScrollArea className="max-h-96">
-              {requests.map((req) =>
-                isVerifier ? (
-                  <VerifierNotificationItem
-                    key={req.id}
-                    req={req}
-                    onPreview={(r) => {
-                      setPreview(r);
-                      setOpen(false);
+              {/* Items list */}
+              <div style={{ maxHeight: 360, overflowY: "auto" }}>
+                {requests.length === 0 ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 10,
+                      padding: "36px 16px",
+                      color: TOKEN.textSec,
                     }}
-                    onRequestAction={(target) => {
-                      setOpen(false);
-                      setRemarksTarget(target);
-                    }}
-                  />
+                  >
+                    <Inbox size={32} style={{ opacity: 0.25 }} />
+                    <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600 }}>
+                      {isVerifier
+                        ? "No pending requests"
+                        : "No requests submitted yet"}
+                    </p>
+                  </div>
                 ) : (
-                  <SubmitterNotificationItem
-                    key={req.id}
-                    req={req}
-                    onPreview={(r) => {
-                      setPreview(r);
-                      setOpen(false);
-                    }}
-                  />
-                ),
-              )}
-            </ScrollArea>
-          )}
-
-          {isSubmitter && requests.length > 0 && (
-            <>
-              <DropdownMenuSeparator className="m-0" />
-              <div className="px-3 py-2">
-                <p className="text-[11px] text-muted-foreground">
-                  {requests.filter((r) => r.status === "pending").length > 0
-                    ? "Your requests are awaiting review by a manager."
-                    : "All your requests have been reviewed."}
-                </p>
+                  requests.map((req) => (
+                    <NotificationItem
+                      key={req.id}
+                      req={req}
+                      isVerifier={isVerifier}
+                      onPreview={(r) => {
+                        setPreview(r);
+                        setOpen(false);
+                      }}
+                      onAction={(target) => {
+                        setOpen(false);
+                        setRemarksTarget(target);
+                      }}
+                    />
+                  ))
+                )}
               </div>
-            </>
+
+              {/* Footer */}
+              {requests.length > 0 && (
+                <div
+                  style={{
+                    padding: "10px 16px",
+                    borderTop: `1px solid ${TOKEN.border}`,
+                  }}
+                >
+                  {isSubmitter && (
+                    <p
+                      style={{
+                        margin: "0 0 8px",
+                        fontSize: 11.5,
+                        color: TOKEN.textSec,
+                        textAlign: "center",
+                      }}
+                    >
+                      {requests.filter((r) => r.status === "pending").length > 0
+                        ? "Your requests are awaiting review."
+                        : "All requests have been reviewed."}
+                    </p>
+                  )}
+                  <motion.button
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => setOpen(false)}
+                    style={{
+                      width: "100%",
+                      padding: "9px 0",
+                      borderRadius: 10,
+                      border: `1px solid ${TOKEN.border}`,
+                      background: TOKEN.bg,
+                      color: TOKEN.textSec,
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Close
+                  </motion.button>
+                </div>
+              )}
+            </motion.div>
           )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+        </AnimatePresence>
+      </div>
 
       {/* Full preview modal */}
       <RequestPreviewModal
         request={preview}
         open={!!preview}
-        onOpenChange={(v: boolean) => !v && setPreview(null)}
+        onOpenChange={(v) => !v && setPreview(null)}
         onActionComplete={() => setPreview(null)}
       />
 
-      {/* Remarks-gated approve/reject dialog */}
+      {/* Remarks dialog */}
       <RemarksConfirmDialog
         target={remarksTarget}
         open={!!remarksTarget}
-        onOpenChange={(v: boolean) => !v && setRemarksTarget(null)}
+        onOpenChange={(v) => !v && setRemarksTarget(null)}
         onConfirm={handleRemarksConfirm}
       />
     </>

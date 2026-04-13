@@ -1,7 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-//  JARIS CMS — Nav Data & Types
-// ─────────────────────────────────────────────────────────────────────────────
-
 import {
   Package,
   Briefcase,
@@ -16,56 +12,66 @@ import React from "react";
 export type NavId = "products" | "jobs" | "content" | "admin";
 
 export interface NavSection {
-  id:    NavId;
+  id: NavId;
   label: string;
-  Icon:  React.ElementType;
-  tabs:  readonly string[];
+  Icon: React.ElementType;
+  tabs: readonly string[];
 }
 
 export interface CmsUser {
-  name:     string;
-  role:     string;
+  name: string;
+  role: string;
   initials: string;
 }
 
 export const NAV_SECTIONS: readonly NavSection[] = [
   {
-    id:    "products",
+    id: "products",
     label: "Products",
-    Icon:  Package,
+    Icon: Package,
     tabs: [
-      "All Products", "Taskflow",     "Shopify",    "Requests",
-      "Applications", "Brands",       "Families",   "Orders",
-      "Reviews",      "Solutions",    "Series",     "Specs",
+      "All Products",
+      "Taskflow",
+      "Shopify",
+      "Requests",
+      "Applications",
+      "Brands",
+      "Families",
+      "Orders",
+      "Reviews",
+      "Solutions",
+      "Series",
+      "Specs",
     ],
   },
   {
-    id:    "jobs",
+    id: "jobs",
     label: "Jobs",
-    Icon:  Briefcase,
-    tabs:  ["Applications", "Careers"],
+    Icon: Briefcase,
+    // Careers first — hr lands on Careers tab by default
+    tabs: ["Careers", "Applications"],
   },
   {
-    id:    "content",
+    id: "content",
     label: "Content",
-    Icon:  FileText,
-    tabs:  ["Blogs", "FAQs", "Popups", "Projects"],
+    Icon: FileText,
+    tabs: ["Blogs", "FAQs", "Popups", "Projects"],
   },
   {
-    id:    "admin",
+    id: "admin",
     label: "Admin",
-    Icon:  Shield,
-    tabs:  ["Recycle Bin", "User Management"],
+    Icon: Shield,
+    tabs: ["Recycle Bin", "Audit Logs", "User Management"],
   },
 ] as const;
 
 export const FAB_QUICK_ACTIONS = [
-  { id: "search",  label: "Search",  Icon: Search, color: "#2563EB" },
-  { id: "add",     label: "Add New", Icon: Plus,   color: "#4F46E5" },
+  { id: "search", label: "Search", Icon: Search, color: "#2563EB" },
+  { id: "add", label: "Add New", Icon: Plus, color: "#4F46E5" },
 ] as const;
 
 export const PLACEHOLDER_USER: CmsUser = {
-  name:     "Alex Rivera",
-  role:     "Director / Sales",
+  name: "Alex Rivera",
+  role: "Director / Sales",
   initials: "AR",
 };

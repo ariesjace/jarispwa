@@ -10,11 +10,10 @@ import {
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { useAuth, User } from "@/lib/useAuth";
-import { Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
+import { Eye, EyeOff, Loader2, Zap } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
+import { TOKEN, SPRING_MED } from "@/components/layout/tokens";
 
 const LOGIN_MARKER_KEY = "disruptive_last_login_at";
 
@@ -23,22 +22,20 @@ function friendlyAuthError(code: string): string {
     case "auth/invalid-credential":
     case "auth/wrong-password":
     case "auth/user-not-found":
-      return "Invalid email or password. Please try again.";
+      return "Invalid email or password.";
     case "auth/invalid-email":
       return "Please enter a valid email address.";
     case "auth/too-many-requests":
-      return "Too many failed attempts. Please wait a few minutes and try again.";
+      return "Too many attempts. Please wait and try again.";
     case "auth/user-disabled":
-      return "This account has been disabled. Contact your administrator.";
+      return "This account has been disabled.";
     case "auth/network-request-failed":
-      return "Network error. Please check your connection.";
+      return "Network error. Check your connection.";
     case "auth/popup-closed-by-user":
     case "auth/cancelled-popup-request":
       return "";
     case "auth/popup-blocked":
-      return "Pop-up was blocked by your browser. Please allow pop-ups and try again.";
-    case "auth/account-exists-with-different-credential":
-      return "An account already exists with this email using a different sign-in method.";
+      return "Pop-up blocked. Allow pop-ups and try again.";
     default:
       return "Login failed. Please try again.";
   }
@@ -46,13 +43,7 @@ function friendlyAuthError(code: string): string {
 
 function GoogleIcon() {
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 48 48"
-      width="16"
-      height="16"
-      style={{ flexShrink: 0 }}
-    >
+    <svg viewBox="0 0 48 48" width="18" height="18" style={{ flexShrink: 0 }}>
       <path
         fill="#FFC107"
         d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 7.9 3l5.7-5.7C34 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.2-.1-2.4-.4-3.5z"
@@ -84,16 +75,6 @@ export function LoginForm() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [error, setError] = useState("");
 
-  /**
-   * finalizeLogin
-   * ─────────────
-   * 1. Verify the Firebase user exists in adminaccount Firestore collection
-   * 2. POST to /api/auth/login to create the HTTP-only session cookie
-   *    (server validates role against Firestore, resolves scopeAccess)
-   * 3. Sync resolved user into AuthContext BEFORE navigation so
-   *    RouteProtection never sees a stale null state
-   * 4. Navigate to the user's primary route
-   */
   async function finalizeLogin(
     firebaseUser: {
       uid: string;
@@ -105,17 +86,15 @@ export function LoginForm() {
   ) {
     try {
       const userSnap = await getDoc(doc(db, "adminaccount", firebaseUser.uid));
-
       if (!userSnap.exists()) {
-        onError("Account not found. Please contact your administrator.");
+        onError("Account not found. Contact your administrator.");
         onDone();
         return;
       }
 
       const data = userSnap.data();
-
       if (data.status === "inactive") {
-        onError("Your account is inactive. Please contact your administrator.");
+        onError("Your account is inactive. Contact your administrator.");
         onDone();
         return;
       }
@@ -125,8 +104,6 @@ export function LoginForm() {
         .trim();
       const fullName = data.fullName || firebaseUser.displayName || "User";
 
-      // Create server-side session cookie — server reads scopeAccess from
-      // Firestore via Admin SDK, so the client cannot escalate privileges.
       const sessionRes = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -140,7 +117,7 @@ export function LoginForm() {
 
       if (!sessionRes.ok) {
         const errData = await sessionRes.json().catch(() => ({}));
-        onError(errData.error || "Session creation failed. Please try again.");
+        onError(errData.error || "Session creation failed.");
         onDone();
         return;
       }
@@ -148,20 +125,12 @@ export function LoginForm() {
       const sessionData = await sessionRes.json();
       const resolvedUser: User = sessionData.user;
 
-      // Stamp login time so verifySession retry guard works correctly
       localStorage.setItem(LOGIN_MARKER_KEY, String(Date.now()));
-
-      // Push user into AuthContext BEFORE router.replace() — this prevents
-      // RouteProtection from seeing user=null on the destination page
       login(resolvedUser);
-
       toast.success(`Welcome back, ${fullName.split(" ")[0]}!`);
-
-      // Always navigate to / — app/page.tsx reads the resolved role
-      // and redirects to the RBAC-assigned primary route from there.
       router.replace("/");
     } catch {
-      onError("An unexpected error occurred. Please try again.");
+      onError("An unexpected error occurred.");
       onDone();
     }
   }
@@ -175,12 +144,8 @@ export function LoginForm() {
     setIsLoading(true);
     setError("");
     try {
-      const credential = await signInWithEmailAndPassword(
-        auth,
-        email,
-        password,
-      );
-      await finalizeLogin(credential.user, setError, () => setIsLoading(false));
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      await finalizeLogin(cred.user, setError, () => setIsLoading(false));
     } catch (err: any) {
       const msg = friendlyAuthError(err?.code ?? "");
       if (msg) setError(msg);
@@ -194,10 +159,8 @@ export function LoginForm() {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
-      const credential = await signInWithPopup(auth, provider);
-      await finalizeLogin(credential.user, setError, () =>
-        setIsGoogleLoading(false),
-      );
+      const cred = await signInWithPopup(auth, provider);
+      await finalizeLogin(cred.user, setError, () => setIsGoogleLoading(false));
     } catch (err: any) {
       const msg = friendlyAuthError(err?.code ?? "");
       if (msg) setError(msg);
@@ -207,80 +170,194 @@ export function LoginForm() {
 
   const anyLoading = isLoading || isGoogleLoading;
 
+  // ── Shared input style — font-size 16px prevents iOS zoom ────────────────
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    fontSize: 16, // critical: prevents iOS Safari auto-zoom
+    padding: "13px 16px",
+    borderRadius: 12,
+    border: `1px solid ${TOKEN.border}`,
+    background: TOKEN.bg,
+    color: TOKEN.textPri,
+    outline: "none",
+    boxSizing: "border-box",
+    WebkitAppearance: "none",
+    transition: "border-color 0.15s",
+    fontFamily: "inherit",
+  };
+
+  const labelStyle: React.CSSProperties = {
+    display: "block",
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    color: TOKEN.textSec,
+    marginBottom: 7,
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
-      <div className="w-full max-w-sm space-y-6">
-        {/* Brand */}
-        <div className="text-center space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">JarIS CMS</h1>
-          <p className="text-sm text-muted-foreground">
+    <div
+      style={{
+        minHeight: "100dvh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: TOKEN.bg,
+        padding: "24px 16px",
+        // Ensure this fills the safe-area on notched phones
+        paddingTop: "max(24px, env(safe-area-inset-top))",
+        paddingBottom: "max(24px, env(safe-area-inset-bottom))",
+      }}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={SPRING_MED}
+        style={{ width: "100%", maxWidth: 380 }}
+      >
+        {/* Brand mark */}
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 14,
+              background: `linear-gradient(135deg, ${TOKEN.primary}, ${TOKEN.secondary})`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              margin: "0 auto 14px",
+              boxShadow: `0 8px 24px -4px ${TOKEN.primary}50`,
+            }}
+          >
+            <Zap size={24} color="#fff" />
+          </div>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: 22,
+              fontWeight: 800,
+              color: TOKEN.textPri,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            JARIS CMS
+          </h1>
+          <p
+            style={{ margin: "5px 0 0", fontSize: 13.5, color: TOKEN.textSec }}
+          >
             Sign in to your account
           </p>
         </div>
 
-        <div className="bg-background border rounded-none shadow-sm p-6 space-y-4">
-          {/* Google SSO */}
-          <Button
+        {/* Card */}
+        <div
+          style={{
+            background: TOKEN.surface,
+            borderRadius: 20,
+            border: `1px solid ${TOKEN.border}`,
+            padding: 24,
+            boxShadow: "0 4px 24px -4px rgba(15,23,42,0.08)",
+          }}
+        >
+          {/* Google button */}
+          <motion.button
             type="button"
-            variant="outline"
-            className="w-full rounded-none h-10 gap-2 font-medium text-sm"
+            whileHover={{ scale: 1.01 }}
+            whileTap={{ scale: 0.98 }}
             onClick={handleGoogleLogin}
             disabled={anyLoading}
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              padding: "13px 16px",
+              borderRadius: 12,
+              border: `1px solid ${TOKEN.border}`,
+              background: TOKEN.surface,
+              color: TOKEN.textPri,
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: anyLoading ? "not-allowed" : "pointer",
+              opacity: anyLoading ? 0.6 : 1,
+              fontFamily: "inherit",
+              transition: "background 0.15s",
+            }}
           >
             {isGoogleLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2
+                size={18}
+                style={{ animation: "spin 0.8s linear infinite" }}
+              />
             ) : (
               <GoogleIcon />
             )}
             Continue with Google
-          </Button>
+          </motion.button>
 
-          <div className="flex items-center gap-3">
-            <Separator className="flex-1" />
-            <span className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest">
+          {/* Divider */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              margin: "20px 0",
+            }}
+          >
+            <div style={{ flex: 1, height: 1, background: TOKEN.border }} />
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: TOKEN.textSec,
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+              }}
+            >
               or
             </span>
-            <Separator className="flex-1" />
+            <div style={{ flex: 1, height: 1, background: TOKEN.border }} />
           </div>
 
-          {/* Email + password */}
-          <form onSubmit={handleEmailLogin} className="space-y-4">
-            <div className="space-y-1.5">
-              <label
-                htmlFor="email"
-                className="text-[10px] font-bold uppercase tracking-wider opacity-60"
-              >
-                Email
-              </label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setError("");
-                  }}
-                  placeholder="name@company.com"
-                  className="pl-9 rounded-none h-10 text-sm"
-                  autoComplete="email"
-                  disabled={anyLoading}
-                  required
-                />
-              </div>
+          {/* Email / password form */}
+          <form
+            onSubmit={handleEmailLogin}
+            style={{ display: "flex", flexDirection: "column", gap: 16 }}
+          >
+            {/* Email */}
+            <div>
+              <label style={labelStyle}>Email</label>
+              <input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setError("");
+                }}
+                placeholder="name@company.com"
+                autoComplete="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                disabled={anyLoading}
+                required
+                style={{
+                  ...inputStyle,
+                  borderColor: error && !email ? TOKEN.danger : TOKEN.border,
+                }}
+                onFocus={(e) => (e.target.style.borderColor = TOKEN.primary)}
+                onBlur={(e) => (e.target.style.borderColor = TOKEN.border)}
+              />
             </div>
 
-            <div className="space-y-1.5">
-              <label
-                htmlFor="password"
-                className="text-[10px] font-bold uppercase tracking-wider opacity-60"
-              >
-                Password
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
+            {/* Password */}
+            <div>
+              <label style={labelStyle}>Password</label>
+              <div style={{ position: "relative" }}>
+                <input
                   id="password"
                   type={showPassword ? "text" : "password"}
                   value={password}
@@ -289,50 +366,127 @@ export function LoginForm() {
                     setError("");
                   }}
                   placeholder="Your password"
-                  className="pl-9 pr-10 rounded-none h-10 text-sm"
                   autoComplete="current-password"
                   disabled={anyLoading}
                   required
+                  style={{
+                    ...inputStyle,
+                    paddingRight: 48,
+                    borderColor:
+                      error && !password ? TOKEN.danger : TOKEN.border,
+                  }}
+                  onFocus={(e) => (e.target.style.borderColor = TOKEN.primary)}
+                  onBlur={(e) => (e.target.style.borderColor = TOKEN.border)}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  tabIndex={-1}
                   disabled={anyLoading}
+                  style={{
+                    position: "absolute",
+                    right: 14,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: TOKEN.textSec,
+                    padding: 4,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
                 >
-                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
 
-            {error && (
-              <p className="text-xs text-destructive bg-destructive/5 border border-destructive/20 rounded-none px-3 py-2">
-                {error}
-              </p>
-            )}
+            {/* Error message */}
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  style={{
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    background: "#fef2f2",
+                    border: `1px solid #fecaca`,
+                    fontSize: 13,
+                    color: TOKEN.danger,
+                    fontWeight: 500,
+                  }}
+                >
+                  {error}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-            <Button
+            {/* Submit */}
+            <motion.button
               type="submit"
+              whileHover={{ scale: anyLoading ? 1 : 1.01 }}
+              whileTap={{ scale: anyLoading ? 1 : 0.98 }}
               disabled={anyLoading}
-              className="w-full rounded-none h-10 uppercase font-bold text-[10px] tracking-widest"
+              style={{
+                width: "100%",
+                padding: "14px 16px",
+                borderRadius: 12,
+                border: "none",
+                background: anyLoading ? `${TOKEN.primary}80` : TOKEN.primary,
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: anyLoading ? "not-allowed" : "pointer",
+                fontFamily: "inherit",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                letterSpacing: "0.02em",
+                boxShadow: anyLoading
+                  ? "none"
+                  : `0 4px 14px -2px ${TOKEN.primary}60`,
+                transition: "background 0.15s, box-shadow 0.15s",
+              }}
             >
               {isLoading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2
+                    size={16}
+                    style={{ animation: "spin 0.8s linear infinite" }}
+                  />{" "}
                   Signing in…
                 </>
               ) : (
                 "Sign In"
               )}
-            </Button>
+            </motion.button>
           </form>
         </div>
 
-        <p className="text-center text-[10px] text-muted-foreground">
+        <p
+          style={{
+            textAlign: "center",
+            fontSize: 12,
+            color: TOKEN.textSec,
+            marginTop: 20,
+            opacity: 0.7,
+          }}
+        >
           Contact your administrator if you need access.
         </p>
-      </div>
+      </motion.div>
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        input:-webkit-autofill {
+          -webkit-box-shadow: 0 0 0 100px ${TOKEN.bg} inset !important;
+          -webkit-text-fill-color: ${TOKEN.textPri} !important;
+        }
+      `}</style>
     </div>
   );
 }

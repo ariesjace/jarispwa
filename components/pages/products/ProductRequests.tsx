@@ -1,13 +1,34 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { collection, query, orderBy, onSnapshot, updateDoc, doc } from "firebase/firestore";
-import { db } from "@/lib/firebase"; 
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+} from "react";
+import {
+  collection,
+  query,
+  orderBy,
+  onSnapshot,
+  updateDoc,
+  doc,
+} from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { TOKEN } from "@/components/layout/tokens";
 import {
-  Search, Filter,
-  CheckCircle2, XCircle, Clock, Package, Eye, X, MoreHorizontal, Check,
-  ChevronLeft, ChevronRight
+  Search,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Package,
+  Eye,
+  MoreHorizontal,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Check,
 } from "lucide-react";
 import {
   useReactTable,
@@ -19,11 +40,10 @@ import {
   flexRender,
   SortingState,
   ColumnFiltersState,
-  RowSelectionState
+  RowSelectionState,
 } from "@tanstack/react-table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { FAB } from "@/components/layout/FAB";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,6 +51,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
+import { toast } from "sonner";
 
 import { useAuth } from "@/lib/useAuth";
 import { canSeeNotifications, hasAccess } from "@/lib/rbac";
@@ -44,9 +65,9 @@ import {
   RemarksConfirmDialog,
   RemarksTarget,
 } from "@/components/notifications/remarks-confirm-dialog";
-import { toast } from "sonner";
 
-// --- Logic Helpers ---
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function formatTs(ts: any): string {
   if (!ts) return "—";
   try {
@@ -59,252 +80,419 @@ function formatTs(ts: any): string {
 function getRequestDisplayName(req: PendingRequest): string {
   const meta = req.meta ?? {};
   if (meta.productName) return String(meta.productName);
-  const payload = req.payload ?? {};
-  const d = payload.after ?? payload.productSnapshot ?? payload;
+  const d = req.payload?.after ?? req.payload?.productSnapshot ?? req.payload;
   return d?.itemDescription || d?.name || d?.itemCode || req.resourceId || "—";
 }
+
+// ─── Inline styles (matching AllProducts) ─────────────────────────────────────
+
+const tableContainerStyle: React.CSSProperties = {
+  border: `1px solid ${TOKEN.border}`,
+  borderRadius: 16,
+  overflow: "hidden",
+  background: TOKEN.surface,
+};
+const stickyHeadStyle: React.CSSProperties = {
+  position: "sticky",
+  top: 0,
+  background: TOKEN.surface,
+  zIndex: 10,
+  borderBottom: `1px solid ${TOKEN.border}`,
+  boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
+};
+const thStyle: React.CSSProperties = {
+  padding: "14px 12px",
+  fontSize: 12,
+  fontWeight: 600,
+  color: TOKEN.textSec,
+};
+const tdStyle: React.CSSProperties = {
+  padding: "12px 12px",
+  verticalAlign: "middle",
+};
+const iconBtnStyle: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  padding: 6,
+  cursor: "pointer",
+  color: TOKEN.textSec,
+  borderRadius: 6,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+const pageBtnStyle: React.CSSProperties = {
+  padding: 6,
+  borderRadius: 8,
+  border: `1px solid ${TOKEN.border}`,
+  background: TOKEN.surface,
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+// ─── Type / Status badge styles ────────────────────────────────────────────────
+
+function TypeBadge({ type }: { type: string }) {
+  const styles: Record<string, React.CSSProperties> = {
+    create: { background: "#e0f2fe", color: "#0369a1" },
+    update: { background: "#ede9fe", color: "#6d28d9" },
+    delete: { background: "#fee2e2", color: "#b91c1c" },
+  };
+  return (
+    <span
+      style={{
+        fontSize: 9,
+        fontWeight: 800,
+        textTransform: "uppercase" as const,
+        padding: "2px 7px",
+        borderRadius: 4,
+        ...(styles[type] ?? { background: TOKEN.bg, color: TOKEN.textSec }),
+      }}
+    >
+      {type}
+    </span>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const configs: Record<
+    string,
+    { bg: string; color: string; Icon: React.ElementType; label: string }
+  > = {
+    pending: { bg: "#fef9c3", color: "#a16207", Icon: Clock, label: "Pending" },
+    approved: {
+      bg: "#dcfce7",
+      color: "#15803d",
+      Icon: CheckCircle2,
+      label: "Approved",
+    },
+    rejected: {
+      bg: "#fee2e2",
+      color: "#b91c1c",
+      Icon: XCircle,
+      label: "Rejected",
+    },
+  };
+  const cfg = configs[status] ?? configs.pending;
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        fontSize: 9,
+        fontWeight: 800,
+        textTransform: "uppercase" as const,
+        padding: "2px 7px",
+        borderRadius: 4,
+        background: cfg.bg,
+        color: cfg.color,
+      }}
+    >
+      <cfg.Icon size={10} />
+      {cfg.label}
+    </span>
+  );
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function ProductRequestsPage() {
   const { user } = useAuth();
   const [data, setData] = useState<PendingRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
 
   const visible = canSeeNotifications(user);
   const isVerifier = hasAccess(user, "verify", "products");
   const reviewer = { uid: user?.uid ?? "", name: user?.name };
 
-  // Table states
-  const [sorting, setSorting] = useState<SortingState>([{ id: "createdAt", desc: true }]);
+  // Table state
+  const [sorting, setSorting] = useState<SortingState>([
+    { id: "createdAt", desc: true },
+  ]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [globalFilter, setGlobalFilter] = useState("");
-  const [rowsPerPageInput, setRowsPerPageInput] = useState("10");
 
+  // Modals
   const [previewReq, setPreviewReq] = useState<PendingRequest | null>(null);
-  const [remarksTarget, setRemarksTarget] = useState<RemarksTarget | null>(null);
-
-  // Mobile specific state
-  const [isMobile, setIsMobile] = useState(false);
+  const [remarksTarget, setRemarksTarget] = useState<RemarksTarget | null>(
+    null,
+  );
 
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 1024);
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    const fn = () => setIsMobile(window.innerWidth < 1024);
+    fn();
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
   }, []);
 
-  // ─── FIREBASE FETCHING ────────────────────────────────────────────────────────
+  // ── Firestore subscription ──────────────────────────────────────────────────
   useEffect(() => {
     if (!visible) {
       setIsLoading(false);
       return;
     }
 
-    // Always fetch everything for the table to manage locally
-    const q = query(
-      collection(db, "requests"),
-      orderBy("createdAt", "desc")
+    const q = query(collection(db, "requests"), orderBy("createdAt", "desc"));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setData(
+          snap.docs.map((d) => ({ id: d.id, ...d.data() }) as PendingRequest),
+        );
+        setIsLoading(false);
+      },
+      () => setIsLoading(false),
     );
-
-    const unsub = onSnapshot(q, (snap) => {
-      let docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as PendingRequest);
-      setData(docs);
-      setIsLoading(false);
-    }, (error) => {
-      console.error("Requests fetch error:", error);
-      setIsLoading(false);
-      toast.error("Failed to load requests.");
-    });
 
     return unsub;
   }, [visible]);
 
-  const handleRemarksConfirm = async (action: "approve" | "reject", requestId: string, remarks: string) => {
-    const t = toast.loading(action === "approve" ? "Approving…" : "Rejecting…");
-    try {
-      if (action === "approve") {
-        await approveRequest(requestId, reviewer);
-      } else {
-        await rejectRequest(requestId, reviewer);
+  // ── Approve / Reject handlers ───────────────────────────────────────────────
+  const handleRemarksConfirm = useCallback(
+    async (
+      action: "approve" | "reject",
+      requestId: string,
+      remarks: string,
+    ) => {
+      const t = toast.loading(
+        action === "approve" ? "Approving…" : "Rejecting…",
+      );
+      try {
+        if (action === "approve") await approveRequest(requestId, reviewer);
+        else await rejectRequest(requestId, reviewer);
+        await updateDoc(doc(db, "requests", requestId), {
+          reviewRemarks: remarks,
+        }).catch(() => {});
+        toast.success(action === "approve" ? "Approved." : "Rejected.", {
+          id: t,
+        });
+      } catch (err: any) {
+        toast.error(err.message || "Action failed.", { id: t });
+        throw err;
       }
-      await updateDoc(doc(db, "requests", requestId), {
-        reviewRemarks: remarks,
-      }).catch(() => {});
-      toast.success(action === "approve" ? "Request approved and executed." : "Request rejected.", { id: t });
-    } catch (err: any) {
-      toast.error(err.message || `${action === "approve" ? "Approval" : "Rejection"} failed.`, { id: t });
-      throw err;
-    }
-  };
+    },
+    [reviewer],
+  );
 
   const handleBulkApprove = async () => {
-    // Collect all selected IDs that are strictly pending
-    const selectedIds = Object.keys(rowSelection).filter((idx) => {
-      return data[Number(idx)]?.status === "pending";
-    }).map((idx) => data[Number(idx)].id);
-    
-    if (selectedIds.length === 0) {
+    const ids = Object.keys(rowSelection)
+      .map((idx) => data[Number(idx)])
+      .filter((r) => r?.status === "pending")
+      .map((r) => r.id);
+    if (!ids.length) {
       toast.error("No pending requests selected.");
       return;
     }
-
-    const t = toast.loading(`Approving ${selectedIds.length} requests...`);
+    const t = toast.loading(`Approving ${ids.length}…`);
     let fails = 0;
-    for (const id of selectedIds) {
+    for (const id of ids) {
       try {
         await approveRequest(id, reviewer);
-        await updateDoc(doc(db, "requests", id), { reviewRemarks: "Bulk approved" }).catch(() => {});
-      } catch (e) {
+        await updateDoc(doc(db, "requests", id), {
+          reviewRemarks: "Bulk approved",
+        }).catch(() => {});
+      } catch {
         fails++;
       }
     }
     setRowSelection({});
-    if (fails === 0) toast.success(`Approved ${selectedIds.length} requests successfully.`, { id: t });
+    if (!fails) toast.success(`Approved ${ids.length}.`, { id: t });
     else toast.error(`Completed with ${fails} failures.`, { id: t });
   };
 
   const handleBulkReject = async () => {
-    const selectedIds = Object.keys(rowSelection).filter((idx) => {
-      return data[Number(idx)]?.status === "pending";
-    }).map((idx) => data[Number(idx)].id);
-    
-    if (selectedIds.length === 0) {
+    const ids = Object.keys(rowSelection)
+      .map((idx) => data[Number(idx)])
+      .filter((r) => r?.status === "pending")
+      .map((r) => r.id);
+    if (!ids.length) {
       toast.error("No pending requests selected.");
       return;
     }
-
-    const t = toast.loading(`Rejecting ${selectedIds.length} requests...`);
+    const t = toast.loading(`Rejecting ${ids.length}…`);
     let fails = 0;
-    for (const id of selectedIds) {
+    for (const id of ids) {
       try {
         await rejectRequest(id, reviewer);
-        await updateDoc(doc(db, "requests", id), { reviewRemarks: "Bulk rejected" }).catch(() => {});
-      } catch (e) {
+        await updateDoc(doc(db, "requests", id), {
+          reviewRemarks: "Bulk rejected",
+        }).catch(() => {});
+      } catch {
         fails++;
       }
     }
     setRowSelection({});
-    if (fails === 0) toast.success(`Rejected ${selectedIds.length} requests successfully.`, { id: t });
+    if (!fails) toast.success(`Rejected ${ids.length}.`, { id: t });
     else toast.error(`Completed with ${fails} failures.`, { id: t });
   };
 
-  // ─── DESKTOP COLUMNS ──────────────────────────────────────────────────────────
-  const columns = useMemo<ColumnDef<PendingRequest>[]>(() => {
-    const cols: ColumnDef<PendingRequest>[] = [
+  // ── Columns ─────────────────────────────────────────────────────────────────
+  const columns = useMemo<ColumnDef<PendingRequest>[]>(
+    () => [
       {
         id: "select",
         header: ({ table }) => (
-          <div className="flex items-center justify-center -ml-1">
+          <div style={{ marginLeft: 8 }}>
             <Checkbox
-              checked={table.getIsAllPageRowsSelected() || (table.getIsSomePageRowsSelected() && "indeterminate")}
+              checked={
+                table.getIsAllPageRowsSelected() ||
+                (table.getIsSomePageRowsSelected() && "indeterminate")
+              }
               onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
               aria-label="Select all"
-              className="border-neutral-300"
             />
           </div>
         ),
         cell: ({ row }) => (
-          <div className="flex items-center justify-center -ml-1">
+          <div style={{ marginLeft: 8 }} onClick={(e) => e.stopPropagation()}>
             <Checkbox
               checked={row.getIsSelected()}
               onCheckedChange={(v) => row.toggleSelected(!!v)}
               aria-label="Select row"
-              className="border-neutral-300"
             />
           </div>
         ),
         enableSorting: false,
-        size: 40,
+        enableHiding: false,
       },
       {
         accessorKey: "type",
         header: "Type",
-        size: 90,
-        cell: ({ row }) => {
-          const type = row.original.type;
-          const styles: Record<string, string> = {
-            create: "bg-sky-100 text-sky-700 hover:bg-sky-100",
-            update: "bg-violet-100 text-violet-700 hover:bg-violet-100",
-            delete: "bg-rose-100 text-rose-700 hover:bg-rose-100",
-          };
-          return (
-            <Badge className={`${styles[type] || "bg-muted text-muted-foreground"} shadow-none uppercase text-[9px] px-1.5 py-0`}>
-              {type}
-            </Badge>
-          );
-        }
-      },
-      {
-        accessorKey: "resource",
-        header: "Resource",
-        size: 100,
-        cell: ({ row }) => <span className="capitalize">{row.original.resource}</span>
+        cell: ({ row }) => <TypeBadge type={row.original.type} />,
       },
       {
         id: "identity",
         header: "Product",
         accessorFn: (req) => getRequestDisplayName(req),
-        size: 320,
         cell: ({ row }) => {
           const name = getRequestDisplayName(row.original);
+          const meta = row.original.meta ?? {};
+          const subCode = (meta.litItemCode || meta.ecoItemCode) as
+            | string
+            | undefined;
           return (
-            <div className="font-semibold truncate max-w-[300px]" title={name}>
-              {name}
+            <div>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  color: TOKEN.textPri,
+                }}
+              >
+                {name}
+              </p>
+              {subCode && (
+                <p
+                  style={{
+                    margin: "2px 0 0",
+                    fontSize: 10,
+                    color: TOKEN.textSec,
+                    fontFamily: "monospace",
+                  }}
+                >
+                  {subCode}
+                </p>
+              )}
             </div>
           );
-        }
+        },
+      },
+      {
+        accessorKey: "resource",
+        header: "Resource",
+        cell: ({ row }) => (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              textTransform: "uppercase",
+              padding: "2px 7px",
+              borderRadius: 4,
+              background: TOKEN.bg,
+              border: `1px solid ${TOKEN.border}`,
+              color: TOKEN.textSec,
+            }}
+          >
+            {row.original.resource}
+          </span>
+        ),
       },
       {
         accessorKey: "requestedByName",
         header: "Requested By",
-        size: 150,
+        cell: ({ row }) => (
+          <span style={{ fontSize: 12.5, color: TOKEN.textPri }}>
+            {row.original.requestedByName || "—"}
+          </span>
+        ),
       },
       {
-        accessorFn: (row) => row.createdAt?.toMillis?.() || 0,
+        accessorFn: (row) => row.createdAt?.toMillis?.() ?? 0,
         id: "createdAt",
         header: "Date",
-        size: 120,
-        cell: ({ row }) => <span className="text-muted-foreground">{formatTs(row.original.createdAt)}</span>
+        cell: ({ row }) => (
+          <span style={{ fontSize: 12, color: TOKEN.textSec }}>
+            {formatTs(row.original.createdAt)}
+          </span>
+        ),
       },
       {
         accessorKey: "status",
         header: "Status",
-        size: 110,
-        cell: ({ row }) => {
-          const status = row.original.status;
-          if (status === "pending") return <Badge className="bg-amber-100 text-amber-700 border-none shadow-none uppercase text-[9px]"><Clock className="w-2.5 h-2.5 mr-1" /> Pending</Badge>;
-          if (status === "approved") return <Badge className="bg-emerald-100 text-emerald-700 border-none shadow-none uppercase text-[9px]"><CheckCircle2 className="w-2.5 h-2.5 mr-1" /> Approved</Badge>;
-          return <Badge className="bg-rose-100 text-rose-700 border-none shadow-none uppercase text-[9px]"><XCircle className="w-2.5 h-2.5 mr-1" /> Rejected</Badge>;
-        }
+        cell: ({ row }) => <StatusBadge status={row.original.status} />,
       },
       {
         id: "actions",
-        size: 80,
+        header: () => (
+          <div style={{ textAlign: "right", paddingRight: 8 }}>Actions</div>
+        ),
         cell: ({ row }) => {
           const req = row.original;
           const isPending = req.status === "pending";
           return (
-            <div className="flex items-center justify-end gap-1 px-2">
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 4,
+                paddingRight: 8,
+              }}
+            >
               <button
-                onClick={(e) => { e.stopPropagation(); setPreviewReq(req); }}
-                className="p-1.5 text-neutral-400 hover:text-neutral-800 hover:bg-neutral-100 rounded-md transition-colors"
+                style={iconBtnStyle}
                 title="Preview"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPreviewReq(req);
+                }}
               >
                 <Eye size={15} />
               </button>
               {isVerifier && isPending && (
                 <>
                   <button
-                    onClick={(e) => { e.stopPropagation(); setRemarksTarget({ request: req, action: "approve" }); }}
-                    className="p-1.5 text-emerald-500 hover:bg-emerald-50 rounded-md transition-colors"
+                    style={{ ...iconBtnStyle, color: "#16a34a" }}
                     title="Approve"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRemarksTarget({ request: req, action: "approve" });
+                    }}
                   >
                     <CheckCircle2 size={15} />
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); setRemarksTarget({ request: req, action: "reject" }); }}
-                    className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-md transition-colors"
+                    style={{ ...iconBtnStyle, color: TOKEN.danger }}
                     title="Reject"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRemarksTarget({ request: req, action: "reject" });
+                    }}
                   >
                     <XCircle size={15} />
                   </button>
@@ -312,327 +500,632 @@ export default function ProductRequestsPage() {
               )}
             </div>
           );
-        }
-      }
-    ];
-    return cols;
-  }, [isVerifier]);
+        },
+        enableSorting: false,
+      },
+    ],
+    [isVerifier],
+  );
 
   const table = useReactTable({
     data,
     columns,
-    state: { sorting, columnFilters, rowSelection, globalFilter },
+    state: { sorting, columnFilters, globalFilter, rowSelection },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
-    onRowSelectionChange: setRowSelection,
     onGlobalFilterChange: setGlobalFilter,
+    onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
   });
 
-  const handlePageSizeApply = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      const val = parseInt(rowsPerPageInput, 10);
-      if (!isNaN(val) && val > 0) {
-        table.setPageSize(val);
-      } else {
-        setRowsPerPageInput(table.getState().pagination.pageSize.toString());
-      }
+  const selectedRows = table.getFilteredSelectedRowModel().rows;
+  const isBulk = selectedRows.length > 0;
+
+  // ── Mobile long-press logic ─────────────────────────────────────────────────
+  const pressTimer = useRef<NodeJS.Timeout | null>(null);
+  const startPress = (rowId: string) => {
+    pressTimer.current = setTimeout(() => {
+      const row = table.getRowModel().rows.find((r) => r.id === rowId);
+      row?.toggleSelected(true);
+    }, 600);
+  };
+  const cancelPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
     }
   };
 
-  const selectedCount = Object.keys(rowSelection).length;
-  
-  // Mobile long press logic
-  const pressTimer = useRef<NodeJS.Timeout | null>(null);
-  const handleTouchStart = (rowIndex: number) => {
-    pressTimer.current = setTimeout(() => {
-      table.getRowModel().rows[rowIndex].toggleSelected(true);
-      if (window.navigator && window.navigator.vibrate) {
-        window.navigator.vibrate(50);
-      }
-    }, 500);
-  };
-  const handleTouchEnd = () => {
-    if (pressTimer.current) clearTimeout(pressTimer.current);
-  };
+  // ── Loading / access denied ─────────────────────────────────────────────────
+  if (!visible)
+    return (
+      <div
+        style={{ padding: "80px 0", textAlign: "center", color: TOKEN.textSec }}
+      >
+        <Clock size={40} style={{ margin: "0 auto 16px", opacity: 0.2 }} />
+        <p style={{ fontSize: 13.5, fontWeight: 600 }}>
+          You don't have permission to view requests.
+        </p>
+      </div>
+    );
 
-  // ─── RENDER ───────────────────────────────────────────────────────────────────
-  if (!visible) return (
-    <div className="flex flex-col w-full h-full pb-16 lg:pb-0 items-center justify-center" style={{ background: TOKEN.bg }}>
-      <Clock size={40} className="mb-4 text-neutral-300" />
-      <p className="text-lg font-bold text-neutral-900 mb-1">Access Denied</p>
-      <p className="text-[13px] text-neutral-400">You do not have permission to view requests.</p>
-    </div>
-  );
+  if (isLoading)
+    return (
+      <div
+        style={{
+          padding: "100px 0",
+          textAlign: "center",
+          color: TOKEN.textSec,
+        }}
+      >
+        <div className="spinner" />
+        <p
+          style={{
+            fontSize: 11,
+            fontWeight: 900,
+            letterSpacing: "0.3em",
+            marginTop: 12,
+          }}
+        >
+          LOADING DATA
+        </p>
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
+        .spinner { width:24px;height:24px;border:2px solid ${TOKEN.border};border-top-color:${TOKEN.primary};
+          border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+      `,
+          }}
+        />
+      </div>
+    );
 
   return (
-    <div className="flex flex-col w-full h-full pb-16 lg:pb-0" style={{ background: TOKEN.bg }}>
-      {/* ── HEADER & TOOLBAR ── */}
-      <div className="sticky top-[var(--sat,0px)] z-20 flex-shrink-0 bg-white/90 backdrop-blur-md border-b" style={{ borderColor: TOKEN.border }}>
-        <div className="px-4 lg:px-6 py-4">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
-                <Clock className="text-orange-600" size={20} />
-              </div>
-              <h1 className="text-xl font-bold tracking-tight text-neutral-900 leading-none">
-                Requests
-              </h1>
-              <Badge variant="secondary" className="ml-2 font-mono text-xs">{data.length}</Badge>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <div className="relative group/search flex-1 lg:w-72">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 group-focus-within/search:text-orange-600 transition-colors" size={16} />
-                <input
-                  type="text"
-                  placeholder="Search requests..."
-                  value={globalFilter}
-                  onChange={(e) => setGlobalFilter(e.target.value)}
-                  className="w-full h-9 pl-9 pr-4 text-[13px] bg-neutral-100/70 hover:bg-neutral-100 focus:bg-white border-transparent focus:border-orange-500 rounded-lg outline-none transition-all shadow-sm"
-                />
-              </div>
-              <button className="h-9 px-3 flex items-center gap-2 text-[13px] font-semibold text-neutral-600 bg-white border rounded-lg hover:bg-neutral-50 shadow-sm whitespace-nowrap transition-colors">
-                <Filter size={15} className="lg:hidden" />
-                <span className="hidden lg:inline">Filters</span>
-              </button>
-            </div>
+    <div
+      style={{
+        width: "100%",
+        maxWidth: 1400,
+        margin: "0 auto",
+        display: "flex",
+        flexDirection: "column",
+        minHeight: "100%",
+      }}
+    >
+      {/* ── Sticky toolbar ── */}
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 40,
+          background: TOKEN.bg,
+          paddingTop: 16,
+          paddingBottom: 16,
+        }}
+      >
+        {/* Page title */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 16,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 24,
+                fontWeight: 800,
+                color: TOKEN.textPri,
+              }}
+            >
+              Requests
+            </h1>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                background: TOKEN.bg,
+                border: `1px solid ${TOKEN.border}`,
+                borderRadius: 6,
+                padding: "2px 8px",
+                color: TOKEN.textSec,
+                fontFamily: "monospace",
+              }}
+            >
+              {data.length}
+            </span>
           </div>
         </div>
 
-        {/* Bulk Action Banner */}
-        {selectedCount > 0 && (
-          <div className="flex items-center justify-between px-4 lg:px-6 py-3 bg-neutral-900 border-t border-neutral-800 animate-in fade-in slide-in-from-top-2">
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 flex items-center justify-center bg-orange-500/20 text-orange-400 rounded-full font-mono text-xs font-bold">
-                {selectedCount}
-              </div>
-              <span className="text-sm font-medium text-white">selected</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {isMobile ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="h-8 w-8 flex items-center justify-center bg-neutral-800 hover:bg-neutral-700 text-white rounded-md transition-colors border border-neutral-700 shadow-sm">
-                      <MoreHorizontal size={16} />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48 p-1">
-                    <DropdownMenuItem onClick={() => setRowSelection({})} className="text-xs py-2 px-3 focus:bg-neutral-100">
-                      Clear selection
-                    </DropdownMenuItem>
-                    {isVerifier && (
-                      <>
-                        <DropdownMenuItem onClick={handleBulkApprove} className="text-xs py-2 px-3 text-emerald-600 focus:text-emerald-700 focus:bg-emerald-50 font-medium">
-                          <CheckCircle2 size={14} className="mr-2" /> Bulk Approve
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={handleBulkReject} className="text-xs py-2 px-3 text-rose-600 focus:text-rose-700 focus:bg-rose-50 font-medium">
-                          <XCircle size={14} className="mr-2" /> Bulk Reject
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : (
+        {/* Bulk banner — desktop */}
+        {!isMobile && isBulk && (
+          <div
+            style={{
+              background: `${TOKEN.primary}10`,
+              border: `1px solid ${TOKEN.primary}30`,
+              borderRadius: 12,
+              padding: "12px 16px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 12,
+            }}
+          >
+            <span
+              style={{ fontSize: 14, fontWeight: 700, color: TOKEN.textPri }}
+            >
+              {selectedRows.length} selected
+            </span>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                style={actionBtnStyle}
+                onClick={() => setRowSelection({})}
+              >
+                Cancel
+              </button>
+              {isVerifier && (
                 <>
-                  <button onClick={() => setRowSelection({})} className="h-8 px-3 text-xs font-semibold text-neutral-300 hover:text-white transition-colors">Cancel</button>
-                  {isVerifier && (
-                    <>
-                      <button onClick={handleBulkApprove} className="h-8 px-3 flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-md transition-colors shadow-sm">
-                        <CheckCircle2 size={14} /> Approve All
-                      </button>
-                      <button onClick={handleBulkReject} className="h-8 px-3 flex items-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold rounded-md transition-colors shadow-sm">
-                        <XCircle size={14} /> Reject All
-                      </button>
-                    </>
-                  )}
+                  <button
+                    style={{
+                      ...actionBtnStyle,
+                      background: "#dcfce7",
+                      color: "#15803d",
+                      border: "1px solid #bbf7d0",
+                    }}
+                    onClick={handleBulkApprove}
+                  >
+                    <CheckCircle2 size={13} /> Approve All
+                  </button>
+                  <button
+                    style={{
+                      ...actionBtnStyle,
+                      background: "#fee2e2",
+                      color: "#b91c1c",
+                      border: "1px solid #fecaca",
+                    }}
+                    onClick={handleBulkReject}
+                  >
+                    <XCircle size={13} /> Reject All
+                  </button>
                 </>
               )}
-              {isMobile && (
-                 <button onClick={() => setRowSelection({})} className="h-8 w-8 flex items-center justify-center bg-neutral-800 hover:bg-neutral-700 text-white rounded-md transition-colors border border-neutral-700 shadow-sm ml-2">
-                   <X size={16} />
-                 </button>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk banner — mobile */}
+        {isMobile && isBulk && (
+          <div
+            style={{
+              background: TOKEN.surface,
+              border: `1px solid ${TOKEN.primary}`,
+              borderRadius: 12,
+              padding: 14,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 12,
+            }}
+          >
+            <span
+              style={{ fontSize: 15, fontWeight: 800, color: TOKEN.primary }}
+            >
+              {selectedRows.length} selected
+            </span>
+            <div style={{ display: "flex", gap: 6 }}>
+              {isVerifier && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button style={iconBtnStyle}>
+                      <MoreHorizontal size={20} />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={handleBulkApprove}>
+                      Bulk Approve
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={handleBulkReject}
+                      className="text-red-600"
+                    >
+                      Bulk Reject
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
+              <button style={iconBtnStyle} onClick={() => setRowSelection({})}>
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Search bar */}
+        {!isBulk && (
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div style={{ position: "relative", flex: 1, maxWidth: 360 }}>
+              <Search
+                size={16}
+                color={TOKEN.textSec}
+                style={{
+                  position: "absolute",
+                  left: 14,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                }}
+              />
+              <input
+                type="text"
+                placeholder="Search requests..."
+                value={globalFilter}
+                onChange={(e) => setGlobalFilter(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "10px 16px 10px 40px",
+                  fontSize: 13.5,
+                  background: TOKEN.surface,
+                  border: `1px solid ${TOKEN.border}`,
+                  borderRadius: 12,
+                  color: TOKEN.textPri,
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
             </div>
           </div>
         )}
       </div>
 
-      {isLoading ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 text-neutral-400">
-          <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm font-semibold tracking-wide">Loading requests...</p>
-        </div>
-      ) : data.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-neutral-400">
-          <Clock size={40} className="mb-4 text-neutral-300" />
-          <p className="text-lg font-bold text-neutral-900 mb-1">No requests yet</p>
-          <p className="text-[13px]">Any product additions/edits via forms will appear here.</p>
-        </div>
-      ) : isMobile ? (
-        // ── MOBILE LAYOUT ──
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-          {table.getRowModel().rows.map(row => {
-            const req = row.original;
-            const isSelected = row.getIsSelected();
-            const displayName = getRequestDisplayName(req);
-            return (
-              <div
-                key={row.id}
-                onTouchStart={() => handleTouchStart(row.index)}
-                onTouchEnd={handleTouchEnd}
-                onTouchMove={handleTouchEnd}
-                onClick={(e) => {
-                  if (selectedCount > 0) {
-                    row.toggleSelected();
-                  } else {
-                    setPreviewReq(req);
-                  }
-                }}
-                className={`relative p-3.5 rounded-xl border bg-white shadow-sm transition-all ${
-                  isSelected ? "border-orange-500 ring-1 ring-orange-500 bg-orange-50/10" : "border-neutral-200"
-                }`}
-              >
-                <div className="flex flex-col gap-2.5">
-                  <div className="flex items-start justify-between">
-                     <div className="flex gap-2">
-                       <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-600">{req.type}</span>
-                       <span className="text-[10px] text-muted-foreground uppercase">{req.resource}</span>
-                     </div>
-                     <span className="text-[10px] text-muted-foreground">{formatTs(req.createdAt)}</span>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-lg border bg-neutral-50 flex items-center justify-center shrink-0">
-                       <Package className="text-neutral-400" size={18} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-neutral-900 leading-tight my-0.5">{displayName}</p>
-                      <p className="text-xs text-neutral-500 truncate mb-1">By {req.requestedByName || "Unknown"}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between mt-1">
-                    <div className="flex items-center gap-2">
-                      {req.status === "pending" && <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Pending</span>}
-                      {req.status === "approved" && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Approved</span>}
-                      {req.status === "rejected" && <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded">Rejected</span>}
-                    </div>
-                    {isSelected && (
-                      <div className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center text-white shrink-0 shadow-sm animate-in zoom-in fade-in">
-                        <Check size={12} strokeWidth={3} />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        // ── DESKTOP LAYOUT ──
-        <div className="flex-1 flex flex-col min-h-0 bg-white m-6 rounded-xl border border-neutral-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-2">
-          <div className="flex-1 overflow-auto custom-scrollbar">
-            <table className="w-full text-left text-[13px] whitespace-nowrap">
-              <thead className="sticky top-0 z-10 bg-neutral-50/95 backdrop-blur shadow-[0_1px_2px_rgba(0,0,0,0.05)]">
-                {table.getHeaderGroups().map(hg => (
-                  <tr key={hg.id}>
-                    {hg.headers.map(h => (
-                      <th
-                        key={h.id}
-                        style={{ width: h.column.getSize() }}
-                        className="h-10 px-3 font-semibold text-neutral-500 select-none group border-b border-neutral-200"
-                      >
-                        <div
-                          className={`flex items-center shrink-0 ${h.column.getCanSort() ? "cursor-pointer hover:text-neutral-900" : ""}`}
-                          onClick={h.column.getToggleSortingHandler()}
-                        >
-                          {flexRender(h.column.columnDef.header, h.getContext())}
-                        </div>
-                      </th>
-                    ))}
-                  </tr>
-                ))}
-              </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {table.getRowModel().rows.map(row => (
+      {/* ── Desktop table ── */}
+      <div className="desktop-view" style={tableContainerStyle}>
+        <div style={{ maxHeight: "calc(100vh - 280px)", overflowY: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              textAlign: "left",
+            }}
+          >
+            <thead style={stickyHeadStyle}>
+              {table.getHeaderGroups().map((hg) => (
+                <tr key={hg.id}>
+                  {hg.headers.map((h) => (
+                    <th key={h.id} style={thStyle}>
+                      {flexRender(h.column.columnDef.header, h.getContext())}
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody>
+              {table.getRowModel().rows.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={columns.length}
+                    style={{
+                      padding: "48px 0",
+                      textAlign: "center",
+                      color: TOKEN.textSec,
+                    }}
+                  >
+                    <Clock
+                      size={32}
+                      style={{ margin: "0 auto 10px", opacity: 0.2 }}
+                    />
+                    <p style={{ fontSize: 13, fontWeight: 600 }}>
+                      No requests found
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                table.getRowModel().rows.map((row) => (
                   <tr
                     key={row.id}
-                    className={`h-12 border-b border-neutral-100 transition-colors group ${
-                      row.getIsSelected() ? "bg-orange-50/40" : "hover:bg-neutral-50"
-                    }`}
+                    style={{
+                      borderBottom: `1px solid ${TOKEN.border}`,
+                      background: row.getIsSelected()
+                        ? `${TOKEN.primary}05`
+                        : "transparent",
+                      cursor: "pointer",
+                    }}
+                    onClick={() => setPreviewReq(row.original)}
                   >
-                    {row.getVisibleCells().map(cell => (
-                      <td key={cell.id} className="px-3" style={{ width: cell.column.getSize(), maxWidth: cell.column.getSize() }}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id} style={tdStyle}>
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
                       </td>
                     ))}
                   </tr>
-                ))}
-                {table.getRowModel().rows.length === 0 && (
-                  <tr>
-                    <td colSpan={columns.length} className="h-32 text-center text-neutral-400">
-                      No matching requests.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
 
-          <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 bg-neutral-50 border-t">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-neutral-500 uppercase tracking-widest">Rows</span>
-              <input
-                type="text"
-                value={rowsPerPageInput}
-                onChange={e => setRowsPerPageInput(e.target.value)}
-                onKeyDown={handlePageSizeApply}
-                onBlur={() => setRowsPerPageInput(table.getState().pagination.pageSize.toString())}
-                className="w-12 h-7 px-2 text-center text-[13px] bg-white border rounded font-mono hover:bg-neutral-50 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 transition-all outline-none"
-              />
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-                className="h-8 w-8 flex items-center justify-center text-neutral-500 border rounded bg-white hover:bg-neutral-50 disabled:opacity-50 disabled:bg-neutral-50 transition-colors"
+        {/* Pagination */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "12px 16px",
+            background: TOKEN.surface,
+            borderTop: `1px solid ${TOKEN.border}`,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontSize: 13, color: TOKEN.textSec }}>
+              {table.getFilteredSelectedRowModel().rows.length} of{" "}
+              {table.getFilteredRowModel().rows.length} row(s) selected
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 13, color: TOKEN.textSec }}>Rows:</span>
+              <select
+                value={table.getState().pagination.pageSize}
+                onChange={(e) => table.setPageSize(Number(e.target.value))}
+                style={{
+                  padding: "4px 8px",
+                  borderRadius: 6,
+                  border: `1px solid ${TOKEN.border}`,
+                  fontSize: 13,
+                }}
               >
-                <ChevronLeft size={16} />
-              </button>
-              <div className="px-3 text-[13px] font-semibold text-neutral-600 bg-white border h-8 flex items-center rounded select-none">
-                {table.getState().pagination.pageIndex + 1} / {table.getPageCount() || 1}
-              </div>
-              <button
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-                className="h-8 w-8 flex items-center justify-center text-neutral-500 border rounded bg-white hover:bg-neutral-50 disabled:opacity-50 disabled:bg-neutral-50 transition-colors"
-              >
-                <ChevronRight size={16} />
-              </button>
+                {[10, 20, 50, 100].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
             </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              style={pageBtnStyle}
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 600,
+                color: TOKEN.textSec,
+                alignSelf: "center",
+              }}
+            >
+              {table.getState().pagination.pageIndex + 1} /{" "}
+              {table.getPageCount() || 1}
+            </span>
+            <button
+              style={pageBtnStyle}
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+            >
+              <ChevronRight size={16} />
+            </button>
           </div>
         </div>
-      )}
+      </div>
 
-      {/* Full preview modal */}
+      {/* ── Mobile cards ── */}
+      <div
+        className="mobile-view"
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+          paddingBottom: 80,
+        }}
+      >
+        {table.getFilteredRowModel().rows.map((row) => {
+          const req = row.original;
+          const isSelected = row.getIsSelected();
+          const name = getRequestDisplayName(req);
+          const isPending = req.status === "pending";
+
+          return (
+            <div
+              key={row.id}
+              style={{
+                borderRadius: 16,
+                padding: "14px",
+                background: isSelected ? `${TOKEN.primary}05` : TOKEN.surface,
+                border: `1px solid ${isSelected ? TOKEN.primary : TOKEN.border}`,
+                position: "relative",
+                userSelect: "none",
+                transition: "all 0.2s ease",
+              }}
+              onMouseDown={() => startPress(row.id)}
+              onMouseUp={cancelPress}
+              onMouseLeave={cancelPress}
+              onTouchStart={() => startPress(row.id)}
+              onTouchEnd={cancelPress}
+              onTouchCancel={cancelPress}
+              onClick={() =>
+                isBulk ? row.toggleSelected() : setPreviewReq(req)
+              }
+            >
+              {isSelected && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: -8,
+                    right: -8,
+                    background: TOKEN.primary,
+                    borderRadius: "50%",
+                    width: 24,
+                    height: 24,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    zIndex: 10,
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                  }}
+                >
+                  <Check size={14} color="#fff" />
+                </div>
+              )}
+
+              <div
+                style={{ display: "flex", gap: 12, alignItems: "flex-start" }}
+              >
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 10,
+                    background: TOKEN.bg,
+                    border: `1px solid ${TOKEN.border}`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Package size={18} color={TOKEN.textSec} />
+                </div>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: TOKEN.textPri,
+                      lineHeight: 1.3,
+                    }}
+                  >
+                    {name}
+                  </p>
+                  <p
+                    style={{
+                      margin: "4px 0 0",
+                      fontSize: 11,
+                      color: TOKEN.textSec,
+                    }}
+                  >
+                    By {req.requestedByName || "Unknown"} ·{" "}
+                    {formatTs(req.createdAt)}
+                  </p>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 6,
+                      marginTop: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <TypeBadge type={req.type} />
+                    <StatusBadge status={req.status} />
+                  </div>
+                </div>
+
+                {/* Mobile actions */}
+                {isVerifier && isPending && !isBulk && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <button
+                      style={{
+                        padding: "5px 10px",
+                        borderRadius: 8,
+                        border: "none",
+                        background: "#dcfce7",
+                        color: "#15803d",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRemarksTarget({ request: req, action: "approve" });
+                      }}
+                    >
+                      ✓ Approve
+                    </button>
+                    <button
+                      style={{
+                        padding: "5px 10px",
+                        borderRadius: 8,
+                        border: "none",
+                        background: "#fee2e2",
+                        color: "#b91c1c",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRemarksTarget({ request: req, action: "reject" });
+                      }}
+                    >
+                      ✕ Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Dialogs ── */}
       <RequestPreviewModal
         request={previewReq}
         open={!!previewReq}
         onOpenChange={(v) => !v && setPreviewReq(null)}
         onActionComplete={() => setPreviewReq(null)}
       />
-
-      {/* Remarks-gated approve/reject dialog */}
       <RemarksConfirmDialog
         target={remarksTarget}
         open={!!remarksTarget}
-        onOpenChange={(v: boolean) => !v && setRemarksTarget(null)}
+        onOpenChange={(v) => !v && setRemarksTarget(null)}
         onConfirm={handleRemarksConfirm}
+      />
+
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+        .desktop-view { display: none !important; }
+        .mobile-view { display: flex; }
+        @media (min-width: 1024px) {
+          .desktop-view { display: flex !important; flex-direction: column; }
+          .mobile-view { display: none !important; }
+        }
+      `,
+        }}
       />
     </div>
   );
 }
+
+// ── Shared inline styles ───────────────────────────────────────────────────────
+
+const actionBtnStyle: React.CSSProperties = {
+  padding: "7px 14px",
+  borderRadius: 8,
+  background: TOKEN.surface,
+  border: `1px solid ${TOKEN.border}`,
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: "pointer",
+  color: TOKEN.textPri,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+};

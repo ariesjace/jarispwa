@@ -1,17 +1,7 @@
 "use client";
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  CMSLayout — full responsive shell
-//
-//  Changes from original:
-//  • Reads real user from useAuth() instead of PLACEHOLDER_USER
-//  • Filters nav sections and tabs by RBAC (getAccessibleNavSections /
-//    getAccessibleTabs from lib/nav-access.ts)
-//  • Derives CmsUser shape (name, role, initials) from auth user
-//  • Passes filtered nav sections to Sidebar, AppHeader, BottomNav
-// ─────────────────────────────────────────────────────────────────────────────
-
 import React, { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { TOKEN, EASE_OUT } from "./tokens";
 import { type NavId } from "./nav-data";
@@ -28,15 +18,28 @@ import {
 } from "@/lib/nav-access";
 import type { NavSection, CmsUser } from "./nav-data";
 
+const NAV_ROUTES: Record<NavId, string> = {
+  products: "/products",
+  jobs: "/jobs",
+  content: "/content",
+  admin: "/admin",
+};
+
 export interface CMSLayoutProps {
+  /** Which nav section this page represents — set by each root page */
+  currentNavId: NavId;
   children?: (ctx: { activeNav: NavId; activeTab: string }) => React.ReactNode;
   onChatOpen?: () => void;
 }
 
-export function CMSLayout({ children, onChatOpen }: CMSLayoutProps) {
+export function CMSLayout({
+  currentNavId,
+  children,
+  onChatOpen,
+}: CMSLayoutProps) {
   const { user, logout } = useAuth();
+  const router = useRouter();
 
-  // ── Derive CmsUser from real auth user ─────────────────────────────────────
   const cmsUser: CmsUser = useMemo(() => {
     if (!user) return { name: "—", role: "—", initials: "?" };
     return {
@@ -46,30 +49,24 @@ export function CMSLayout({ children, onChatOpen }: CMSLayoutProps) {
     };
   }, [user]);
 
-  // ── RBAC-filtered nav sections ─────────────────────────────────────────────
   const accessibleSections = useMemo<NavSection[]>(() => {
     if (!user) return [];
     return getAccessibleNavSections(user.role);
   }, [user]);
 
-  // ── Active nav — default to first accessible section ──────────────────────
-  const [activeNav, setActiveNav] = useState<NavId | null>(null);
+  // Active tab is still local state — resets when the nav section changes
   const [activeTab, setActiveTab] = useState("");
+
+  useEffect(() => {
+    if (user) {
+      const tabs = getAccessibleTabs(currentNavId, user.role);
+      setActiveTab(tabs[0] ?? "");
+    }
+  }, [currentNavId, user]);
+
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
-  // Set initial nav once sections are known
-  useEffect(() => {
-    if (accessibleSections.length > 0 && !activeNav) {
-      const first = accessibleSections[0];
-      setActiveNav(first.id);
-      const firstTabs = user
-        ? getAccessibleTabs(first.id, user.role)
-        : first.tabs;
-      setActiveTab(firstTabs[0] ?? "");
-    }
-  }, [accessibleSections, activeNav, user]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 1023px)");
@@ -79,26 +76,21 @@ export function CMSLayout({ children, onChatOpen }: CMSLayoutProps) {
     return () => mq.removeEventListener("change", update);
   }, []);
 
+  // Nav change → push to that section's root URL
   const handleNavChange = (id: NavId) => {
-    setActiveNav(id);
-    const section = accessibleSections.find((s) => s.id === id);
-    if (section) {
-      const tabs = user ? getAccessibleTabs(id, user.role) : section.tabs;
-      setActiveTab(tabs[0] ?? "");
-    }
+    router.push(NAV_ROUTES[id]);
   };
 
-  // Guard: nothing renders until nav is resolved
-  if (!activeNav || !activeTab) {
+  const visibleTabs = user ? getAccessibleTabs(currentNavId, user.role) : [];
+
+  // Don't render until we have a tab resolved
+  if (!activeTab) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
       </div>
     );
   }
-
-  // Tabs visible to the current user for the active section
-  const visibleTabs = user ? getAccessibleTabs(activeNav, user.role) : [];
 
   return (
     <>
@@ -111,10 +103,10 @@ export function CMSLayout({ children, onChatOpen }: CMSLayoutProps) {
           overflow: "hidden",
         }}
       >
-        {/* ── Desktop sidebar ───────────────────────────────────────── */}
+        {/* Desktop sidebar */}
         {!isMobile && (
           <Sidebar
-            activeNav={activeNav}
+            activeNav={currentNavId}
             onNavChange={handleNavChange}
             onLogout={() => setLogoutOpen(true)}
             user={cmsUser}
@@ -124,7 +116,7 @@ export function CMSLayout({ children, onChatOpen }: CMSLayoutProps) {
           />
         )}
 
-        {/* ── Main column ───────────────────────────────────────────── */}
+        {/* Main column */}
         <div
           style={{
             flex: 1,
@@ -135,7 +127,7 @@ export function CMSLayout({ children, onChatOpen }: CMSLayoutProps) {
           }}
         >
           <AppHeader
-            activeNav={activeNav}
+            activeNav={currentNavId}
             activeTab={activeTab}
             onTabChange={setActiveTab}
             onLogout={() => setLogoutOpen(true)}
@@ -158,36 +150,23 @@ export function CMSLayout({ children, onChatOpen }: CMSLayoutProps) {
             }}
           >
             <AnimatePresence mode="wait">
-              {children ? (
+              {children && (
                 <motion.div
-                  key={`${activeNav}__${activeTab}`}
+                  key={`${currentNavId}__${activeTab}`}
                   initial={{ opacity: 0, y: 14 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
                   transition={EASE_OUT}
                   style={{ padding: isMobile ? 16 : 0, minHeight: "60vh" }}
                 >
-                  {children({ activeNav, activeTab })}
+                  {children({ activeNav: currentNavId, activeTab })}
                 </motion.div>
-              ) : (
-                <motion.div
-                  key={`${activeNav}__${activeTab}`}
-                  initial={{ opacity: 0, y: 14 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={EASE_OUT}
-                  role="main"
-                  style={{
-                    padding: isMobile ? 16 : 0,
-                    minHeight: "calc(100vh - 200px)",
-                  }}
-                />
               )}
             </AnimatePresence>
           </div>
         </div>
 
-        {/* ── Mobile bottom nav ─────────────────────────────────────── */}
+        {/* Mobile bottom nav */}
         {isMobile && (
           <div
             style={{
@@ -204,7 +183,7 @@ export function CMSLayout({ children, onChatOpen }: CMSLayoutProps) {
             }}
           >
             <BottomNav
-              activeNav={activeNav}
+              activeNav={currentNavId}
               onNavChange={handleNavChange}
               navSections={accessibleSections}
             />
@@ -212,7 +191,6 @@ export function CMSLayout({ children, onChatOpen }: CMSLayoutProps) {
         )}
         {isMobile && <FAB bottomOffset={80} />}
 
-        {/* ── Logout modal ──────────────────────────────────────────── */}
         <LogoutModal
           isOpen={logoutOpen}
           onClose={() => setLogoutOpen(false)}

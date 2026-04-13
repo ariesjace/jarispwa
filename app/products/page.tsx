@@ -1,12 +1,5 @@
 "use client";
 
-/**
- * app/products/page.tsx
- * ─────────────────────
- * Products section — wraps everything in RouteProtection so only
- * users with read:products (or wildcard) can reach this page.
- */
-
 import React from "react";
 import { RouteProtection } from "@/components/route-protection";
 import { CMSLayout, TOKEN } from "@/components/layout";
@@ -27,26 +20,18 @@ function ProductsSection({ tab }: { tab: string }) {
         size={48}
         style={{ marginBottom: 16, opacity: 0.2, margin: "0 auto" }}
       />
-      <p style={{ fontSize: 13.5, fontWeight: 600 }}>
-        {label} view is under construction.
-      </p>
+      <p style={{ fontSize: 13.5, fontWeight: 600 }}>{label} — coming soon.</p>
     </div>
   );
 
   switch (tab) {
     case "All Products":
       return <AllProductsPage />;
-
     case "Requests":
-      // Requests tab is only reachable if the user has verify:products OR
-      // write:products (submitters see their own requests).
-      // The tab itself is hidden for read-only roles via nav-access.ts, but
-      // we add a hard guard here for direct URL access.
       if (!user || !hasAccess(user, "write", "products")) {
         return <EmptyState label="No access" />;
       }
       return <ProductRequestsPage />;
-
     default:
       return <EmptyState label={tab} />;
   }
@@ -54,9 +39,8 @@ function ProductsSection({ tab }: { tab: string }) {
 
 export default function ProductsPage() {
   return (
-    // requiredRoutes tells RouteProtection which path prefix this layout guards
     <RouteProtection requiredRoutes={["/products"]}>
-      <CMSLayout>
+      <CMSLayout currentNavId="products">
         {({ activeTab }) => (
           <div style={{ width: "100%", animation: "fadeIn 0.4s ease-out" }}>
             <ProductsSection tab={activeTab} />

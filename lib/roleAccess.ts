@@ -1,15 +1,10 @@
-/**
- * Role-Based Access Control Configuration
- * Defines which pages/routes each role has access to
- */
-
 export type UserRole =
   | "superadmin"
   | "admin"
   | "director"
   | "pd_manager"
   | "pd_engineer"
-  | "pd" // legacy alias
+  | "pd"
   | "project_sales"
   | "warehouse"
   | "staff"
@@ -51,19 +46,19 @@ export const roleAccessConfig: RoleAccessConfig = {
     "/products/all-products",
     "/products/requests",
     "/admin/deleted-products",
-    "/admin/audit-logs", // ← added
+    "/admin/audit-logs",
   ],
   pd_engineer: ["/products/all-products", "/products/requests"],
   pd: ["/products/all-products", "/products/requests"],
 
   project_sales: ["/products/all-products"],
 
-  hr: ["/jobs/applications"],
+  hr: ["/jobs/applications", "/jobs/careers"],
 
   seo: ["/content"],
   marketing: ["/content"],
 
-  csr: ["/inquiries"],
+  csr: ["/inquiries/customer-inquiries"],
 
   warehouse: ["/access-denied"],
   staff: ["/access-denied"],
@@ -135,22 +130,29 @@ export function canAccessRoute(
   });
 }
 
+/**
+ * Primary landing page per role after login.
+ *
+ * superadmin, admin, director, pd_*  → /products
+ * hr                                 → /jobs
+ * seo, marketing                     → /content
+ */
 export function getPrimaryRouteForRole(role: string): string {
   const normalizedRole = normalizeRole(role);
   if (!normalizedRole) return "/access-denied";
 
   const primaryRoutes: Record<UserRole, string> = {
-    superadmin: "/products/all-products",
-    admin: "/products/all-products",
-    director: "/products/all-products",
-    pd_manager: "/products/all-products",
-    pd_engineer: "/products/all-products",
-    pd: "/products/all-products",
-    project_sales: "/products/all-products",
-    hr: "/jobs/applications",
-    seo: "/content/blogs",
-    marketing: "/content/projects",
-    csr: "/inquiries/customer-inquiries",
+    superadmin: "/products",
+    admin: "/products",
+    director: "/products",
+    pd_manager: "/products",
+    pd_engineer: "/products",
+    pd: "/products",
+    project_sales: "/products",
+    hr: "/jobs",
+    seo: "/content",
+    marketing: "/content",
+    csr: "/access-denied",
     warehouse: "/access-denied",
     staff: "/access-denied",
     inventory: "/access-denied",
