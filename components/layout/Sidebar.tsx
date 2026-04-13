@@ -2,10 +2,7 @@
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Sidebar — desktop collapsible left nav (controlled)
-//  Expanded: 17.5rem  |  Collapsed: 72px (icons only)
-//
-//  collapsed / onCollapsedChange are now controlled by CMSLayout so the
-//  AppHeader sidebar-toggle button stays in sync.
+//  Now accepts navSections prop so RBAC filtering from CMSLayout is respected.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from "react";
@@ -13,12 +10,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import { LogOut, ChevronRight, Zap } from "lucide-react";
 import { TOKEN, SPRING_FAST, SPRING_MED } from "./tokens";
 import { NavAvatar } from "./NavAvatar";
-import { NAV_SECTIONS, type NavId, type NavSection, type CmsUser } from "./nav-data";
+import {
+  NAV_SECTIONS,
+  type NavId,
+  type NavSection,
+  type CmsUser,
+} from "./nav-data";
 
 const EXPANDED_W = "17.5rem";
 const COLLAPSED_W = "72px";
-
-// ── SideNavItem ───────────────────────────────────────────────────────────────
 
 interface SideNavItemProps {
   section: NavSection;
@@ -27,11 +27,23 @@ interface SideNavItemProps {
   onClick: () => void;
 }
 
-function SideNavItem({ section, isActive, collapsed, onClick }: SideNavItemProps) {
+function SideNavItem({
+  section,
+  isActive,
+  collapsed,
+  onClick,
+}: SideNavItemProps) {
   const [hovered, setHovered] = useState(false);
-
-  const fg = isActive ? TOKEN.secondary : hovered ? TOKEN.accent : TOKEN.textSec;
-  const iconBg = isActive ? `${TOKEN.secondary}1c` : hovered ? `${TOKEN.accent}18` : `${TOKEN.textSec}10`;
+  const fg = isActive
+    ? TOKEN.secondary
+    : hovered
+      ? TOKEN.accent
+      : TOKEN.textSec;
+  const iconBg = isActive
+    ? `${TOKEN.secondary}1c`
+    : hovered
+      ? `${TOKEN.accent}18`
+      : `${TOKEN.textSec}10`;
 
   return (
     <motion.button
@@ -60,7 +72,6 @@ function SideNavItem({ section, isActive, collapsed, onClick }: SideNavItemProps
         transition: "background 0.15s, color 0.15s",
       }}
     >
-      {/* Active bar */}
       {isActive && (
         <motion.span
           layoutId="sidebarBar"
@@ -78,7 +89,6 @@ function SideNavItem({ section, isActive, collapsed, onClick }: SideNavItemProps
         />
       )}
 
-      {/* Icon */}
       <div
         style={{
           width: 32,
@@ -95,7 +105,6 @@ function SideNavItem({ section, isActive, collapsed, onClick }: SideNavItemProps
         <section.Icon size={16} />
       </div>
 
-      {/* Label */}
       <AnimatePresence initial={false}>
         {!collapsed && (
           <motion.span
@@ -117,7 +126,6 @@ function SideNavItem({ section, isActive, collapsed, onClick }: SideNavItemProps
         )}
       </AnimatePresence>
 
-      {/* Chevron */}
       <AnimatePresence initial={false}>
         {isActive && !collapsed && (
           <motion.span
@@ -135,16 +143,15 @@ function SideNavItem({ section, isActive, collapsed, onClick }: SideNavItemProps
   );
 }
 
-// ── Sidebar ───────────────────────────────────────────────────────────────────
-
 export interface SidebarProps {
   activeNav: NavId;
   onNavChange: (id: NavId) => void;
   onLogout: () => void;
   user: CmsUser;
-  /** Controlled from CMSLayout so AppHeader toggle stays in sync */
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
+  /** RBAC-filtered sections — passed from CMSLayout */
+  navSections?: NavSection[];
 }
 
 export function Sidebar({
@@ -154,6 +161,7 @@ export function Sidebar({
   user,
   collapsed,
   onCollapsedChange,
+  navSections = NAV_SECTIONS as unknown as NavSection[],
 }: SidebarProps) {
   return (
     <motion.aside
@@ -175,7 +183,7 @@ export function Sidebar({
         minWidth: 0,
       }}
     >
-      {/* ── Brand ─────────────────────────────────────────────────── */}
+      {/* Brand */}
       <div
         style={{
           padding: collapsed ? "20px 0" : "20px 16px",
@@ -230,7 +238,7 @@ export function Sidebar({
         </AnimatePresence>
       </div>
 
-      {/* ── Nav items ─────────────────────────────────────────────── */}
+      {/* Nav items — RBAC-filtered */}
       <nav
         role="menu"
         style={{
@@ -242,7 +250,7 @@ export function Sidebar({
           transition: "padding 0.2s",
         }}
       >
-        {NAV_SECTIONS.map((section) => (
+        {navSections.map((section) => (
           <SideNavItem
             key={section.id}
             section={section}
@@ -253,7 +261,7 @@ export function Sidebar({
         ))}
       </nav>
 
-      {/* ── User footer ───────────────────────────────────────────── */}
+      {/* User footer */}
       <div
         style={{
           padding: collapsed ? "12px 8px" : "12px",
@@ -327,9 +335,10 @@ export function Sidebar({
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
+                  textTransform: "capitalize",
                 }}
               >
-                {user.role}
+                {user.role.replace(/_/g, " ")}
               </p>
             </div>
             <motion.button

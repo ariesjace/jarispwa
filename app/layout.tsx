@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import ServiceWorkerRegister from "@/app/components/ServiceWorkerRegister";
+import { AuthProvider } from "@/lib/useAuth";
 import "./globals.css";
 
-// Fonts
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
   variable: "--font-sans",
@@ -20,7 +20,6 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// Metadata
 export const metadata: Metadata = {
   title: "JARIS CMS",
   description: "Internal CMS app for Disruptive Solutions Inc.",
@@ -32,31 +31,22 @@ export const metadata: Metadata = {
   },
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent", // transparent status bar — app background shows through
+    statusBarStyle: "black-translucent",
     title: "Jaris",
   },
-  formatDetection: {
-    telephone: false,
-  },
+  formatDetection: { telephone: false },
 };
 
-// viewport-fit=cover is REQUIRED to make env(safe-area-inset-*) work on iOS
-// Without it the browser masks the notch/home-indicator area and the CSS vars
-// always resolve to 0.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
   themeColor: "#2563EB",
-  viewportFit: "cover", // ← unlocks safe-area-inset env() on iOS PWA
+  viewportFit: "cover",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"
@@ -70,18 +60,17 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Jaris" />
       </head>
-
       <body
         className="w-full flex flex-col"
-        style={{
-          minHeight: "100vh",
-          touchAction: "manipulation",
-          overflowX: "hidden",
-        }}
+        style={{ minHeight: "100vh", touchAction: "manipulation", overflowX: "hidden" }}
       >
-        <ServiceWorkerRegister />
-        {children}
-        <Toaster position="top-right" richColors />
+        {/* AuthProvider wraps the entire tree so every page/component
+            can call useAuth() without additional setup */}
+        <AuthProvider>
+          <ServiceWorkerRegister />
+          {children}
+          <Toaster position="top-right" richColors />
+        </AuthProvider>
       </body>
     </html>
   );

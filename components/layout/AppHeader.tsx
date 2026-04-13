@@ -1,36 +1,52 @@
 "use client";
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  AppHeader — single sticky row
-//
-//  Desktop:  [SidebarToggle] [scrollable pill tabs ···] [Chat] [Notifications]
-//  Mobile:   [Greeting]                                  [Chat] [Notif] [Avatar]
-//            [scrollable pill tabs ···]
+//  AppHeader
+//  Changes: accepts navSections (RBAC-filtered) and visibleTabs props
+//  from CMSLayout so tabs are also role-aware.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Bell, MessageSquare, LogOut,
-  PanelLeftClose, PanelLeftOpen,
+  Bell,
+  MessageSquare,
+  LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { NotificationsDropdown } from "@/components/notifications/notifications-dropdown";
 import { TOKEN, SPRING_FAST, SPRING_MED } from "./tokens";
 import { NavAvatar } from "./NavAvatar";
-import { NAV_SECTIONS, type NavId, type CmsUser } from "./nav-data";
+import {
+  NAV_SECTIONS,
+  type NavId,
+  type NavSection,
+  type CmsUser,
+} from "./nav-data";
 
 // ── PillTab ───────────────────────────────────────────────────────────────────
 
-interface PillTabProps {
+function PillTab({
+  label,
+  isActive,
+  onClick,
+}: {
   label: string;
   isActive: boolean;
   onClick: () => void;
-}
-
-function PillTab({ label, isActive, onClick }: PillTabProps) {
+}) {
   const [hovered, setHovered] = useState(false);
-  const bg = isActive ? TOKEN.secondary : hovered ? `${TOKEN.accent}18` : TOKEN.surface;
-  const borderColor = isActive ? TOKEN.secondary : hovered ? TOKEN.accent : TOKEN.border;
+  const bg = isActive
+    ? TOKEN.secondary
+    : hovered
+      ? `${TOKEN.accent}18`
+      : TOKEN.surface;
+  const borderColor = isActive
+    ? TOKEN.secondary
+    : hovered
+      ? TOKEN.accent
+      : TOKEN.border;
   const fg = isActive ? "#fff" : hovered ? TOKEN.accent : TOKEN.textSec;
 
   return (
@@ -77,18 +93,18 @@ function PillTab({ label, isActive, onClick }: PillTabProps) {
 
 // ── SidebarToggleButton ───────────────────────────────────────────────────────
 
-interface SidebarToggleButtonProps {
+function SidebarToggleButton({
+  collapsed,
+  onToggle,
+}: {
   collapsed: boolean;
   onToggle: () => void;
-}
-
-function SidebarToggleButton({ collapsed, onToggle }: SidebarToggleButtonProps) {
+}) {
   return (
     <motion.button
       whileHover={{ scale: 1.08 }}
       whileTap={{ scale: 0.9 }}
       onClick={onToggle}
-      title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
       aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
       style={{
         flexShrink: 0,
@@ -110,22 +126,15 @@ function SidebarToggleButton({ collapsed, onToggle }: SidebarToggleButtonProps) 
   );
 }
 
-
-
 // ── ChatButton ────────────────────────────────────────────────────────────────
 
-interface ChatButtonProps {
-  onClick?: () => void;
-}
-
-function ChatButton({ onClick }: ChatButtonProps) {
-  const UNREAD_CHATS = 2;
+function ChatButton({ onClick }: { onClick?: () => void }) {
   return (
     <motion.button
       whileHover={{ scale: 1.06 }}
       whileTap={{ scale: 0.9 }}
       onClick={onClick}
-      aria-label={`Chats${UNREAD_CHATS ? ` (${UNREAD_CHATS} unread)` : ""}`}
+      aria-label="Chats"
       style={{
         position: "relative",
         flexShrink: 0,
@@ -143,48 +152,27 @@ function ChatButton({ onClick }: ChatButtonProps) {
       }}
     >
       <MessageSquare size={16} />
-      {UNREAD_CHATS > 0 && (
-        <span
-          style={{
-            position: "absolute",
-            top: 4,
-            right: 4,
-            minWidth: 14,
-            height: 14,
-            borderRadius: 999,
-            background: TOKEN.secondary,
-            border: `2px solid ${TOKEN.surface}`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 8,
-            fontWeight: 800,
-            color: "#fff",
-            padding: "0 2px",
-          }}
-        >
-          {UNREAD_CHATS}
-        </span>
-      )}
     </motion.button>
   );
 }
 
-// ── AvatarDropdown (mobile only) ──────────────────────────────────────────────
+// ── AvatarDropdown (mobile) ───────────────────────────────────────────────────
 
-interface AvatarDropdownProps {
+function AvatarDropdown({
+  user,
+  onLogout,
+}: {
   user: CmsUser;
   onLogout: () => void;
-}
-
-function AvatarDropdown({ user, onLogout }: AvatarDropdownProps) {
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -264,9 +252,10 @@ function AvatarDropdown({ user, onLogout }: AvatarDropdownProps) {
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
+                    textTransform: "capitalize",
                   }}
                 >
-                  {user.role}
+                  {user.role.replace(/_/g, " ")}
                 </p>
               </div>
             </div>
@@ -274,7 +263,10 @@ function AvatarDropdown({ user, onLogout }: AvatarDropdownProps) {
               <motion.button
                 whileHover={{ background: TOKEN.dangerBg }}
                 whileTap={{ scale: 0.97 }}
-                onClick={() => { setOpen(false); onLogout(); }}
+                onClick={() => {
+                  setOpen(false);
+                  onLogout();
+                }}
                 style={{
                   width: "100%",
                   display: "flex",
@@ -326,9 +318,12 @@ export interface AppHeaderProps {
   onChatOpen?: () => void;
   user: CmsUser;
   isMobile?: boolean;
-  /** Desktop only — controlled by CMSLayout */
   sidebarCollapsed?: boolean;
   onSidebarToggle?: () => void;
+  /** RBAC-filtered nav sections from CMSLayout */
+  navSections?: NavSection[];
+  /** RBAC-filtered tabs for the active section */
+  visibleTabs?: readonly string[];
 }
 
 export function AppHeader({
@@ -341,35 +336,23 @@ export function AppHeader({
   isMobile = false,
   sidebarCollapsed = false,
   onSidebarToggle,
+  navSections = NAV_SECTIONS as unknown as NavSection[],
+  visibleTabs,
 }: AppHeaderProps) {
-  const section = NAV_SECTIONS.find((s) => s.id === activeNav)!;
+  const section = navSections.find((s) => s.id === activeNav) ?? navSections[0];
+  // Fall back to full section tabs if visibleTabs not provided
+  const tabs = visibleTabs ?? section?.tabs ?? [];
+
+  if (!section) return null;
 
   return (
-    <header
-      style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 100,
-        // No top-level background — the two zones below each own their background
-      }}
-    >
-      {/* ── Status-bar fill ──────────────────────────────────────────────
-           Height = env(safe-area-inset-top) — exactly the status bar zone.
-           Background = TOKEN.primary (brand blue) so white system icons
-           (clock, battery, signal) remain legible. On devices with no notch
-           --sat resolves to 0px and this div collapses to nothing.
-           This mirrors React Native's:
-             <StatusBar barStyle="light-content" backgroundColor={TOKEN.primary} />
-      ─────────────────────────────────────────────────────────────────── */}
+    <header style={{ position: "sticky", top: 0, zIndex: 100 }}>
+      {/* Status-bar fill (iOS safe area) */}
       <div
         aria-hidden="true"
-        style={{
-          height: "var(--sat, 0px)",
-          background: TOKEN.primary,
-        }}
+        style={{ height: "var(--sat, 0px)", background: TOKEN.primary }}
       />
 
-      {/* ── Header content ───────────────────────────────────────────── */}
       <div
         style={{
           background: `${TOKEN.bg}f0`,
@@ -378,7 +361,7 @@ export function AppHeader({
           borderBottom: `1px solid ${TOKEN.border}`,
         }}
       >
-        {/* ── Mobile: greeting row ─────────────────────────────────────── */}
+        {/* Mobile greeting row */}
         {isMobile && (
           <div
             style={{
@@ -401,11 +384,25 @@ export function AppHeader({
               >
                 Hello, {user.name.split(" ")[0]}!
               </p>
-              <p style={{ margin: 0, fontSize: 11, color: TOKEN.textSec }}>
-                {user.role}
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 11,
+                  color: TOKEN.textSec,
+                  textTransform: "capitalize",
+                }}
+              >
+                {user.role.replace(/_/g, " ")}
               </p>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexShrink: 0,
+              }}
+            >
               <ChatButton onClick={onChatOpen} />
               <NotificationsDropdown />
               <AvatarDropdown user={user} onLogout={onLogout} />
@@ -413,7 +410,7 @@ export function AppHeader({
           </div>
         )}
 
-        {/* ── Single tab + actions row ─────────────────────────────────── */}
+        {/* Tabs + actions row */}
         <div
           style={{
             display: "flex",
@@ -423,15 +420,12 @@ export function AppHeader({
             minWidth: 0,
           }}
         >
-          {/* Sidebar toggle — desktop only */}
           {!isMobile && onSidebarToggle && (
             <SidebarToggleButton
               collapsed={sidebarCollapsed}
               onToggle={onSidebarToggle}
             />
           )}
-
-          {/* Divider — desktop only */}
           {!isMobile && (
             <div
               style={{
@@ -444,7 +438,7 @@ export function AppHeader({
             />
           )}
 
-          {/* Scrollable pill tabs — takes all remaining space */}
+          {/* Scrollable pill tabs — only role-accessible tabs */}
           <div
             role="tablist"
             aria-label={`${section.label} pages`}
@@ -457,7 +451,7 @@ export function AppHeader({
               minWidth: 0,
             }}
           >
-            {section.tabs.map((tab) => (
+            {tabs.map((tab) => (
               <PillTab
                 key={tab}
                 label={tab}
@@ -467,7 +461,6 @@ export function AppHeader({
             ))}
           </div>
 
-          {/* Right actions — desktop only (mobile handled in greeting row) */}
           {!isMobile && (
             <div
               style={{

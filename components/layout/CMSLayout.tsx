@@ -3,41 +3,73 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  CMSLayout — full responsive shell
 //
-//  Desktop  (≥1024 px):  Sidebar (controlled collapse) + AppHeader + content
-//  Mobile   (< 1024 px): AppHeader (greeting + avatar dropdown) + BottomNav + FAB
-//
-//  sidebarCollapsed is lifted here so the AppHeader toggle button
-//  and the Sidebar itself share the same source of truth.
+//  Changes from original:
+//  • Reads real user from useAuth() instead of PLACEHOLDER_USER
+//  • Filters nav sections and tabs by RBAC (getAccessibleNavSections /
+//    getAccessibleTabs from lib/nav-access.ts)
+//  • Derives CmsUser shape (name, role, initials) from auth user
+//  • Passes filtered nav sections to Sidebar, AppHeader, BottomNav
 // ─────────────────────────────────────────────────────────────────────────────
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TOKEN, EASE_OUT } from "./tokens";
-import { NAV_SECTIONS, PLACEHOLDER_USER, type NavId } from "./nav-data";
+import { type NavId } from "./nav-data";
 import { Sidebar } from "./Sidebar";
 import { AppHeader } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { FAB } from "./FAB";
 import { LogoutModal } from "./LogoutModal";
+import { useAuth } from "@/lib/useAuth";
+import {
+  getAccessibleNavSections,
+  getAccessibleTabs,
+  getInitials,
+} from "@/lib/nav-access";
+import type { NavSection, CmsUser } from "./nav-data";
 
 export interface CMSLayoutProps {
   children?: (ctx: { activeNav: NavId; activeTab: string }) => React.ReactNode;
-  user?: typeof PLACEHOLDER_USER;
-  /** Called when the chat button is tapped — wire to your chat route */
   onChatOpen?: () => void;
 }
 
-export function CMSLayout({
-  children,
-  user = PLACEHOLDER_USER,
-  onChatOpen,
-}: CMSLayoutProps) {
-  const [activeNav, setActiveNav] = useState<NavId>("products");
-  const [activeTab, setActiveTab] = useState("All Products");
+export function CMSLayout({ children, onChatOpen }: CMSLayoutProps) {
+  const { user, logout } = useAuth();
+
+  // ── Derive CmsUser from real auth user ─────────────────────────────────────
+  const cmsUser: CmsUser = useMemo(() => {
+    if (!user) return { name: "—", role: "—", initials: "?" };
+    return {
+      name: user.name,
+      role: user.role,
+      initials: getInitials(user.name),
+    };
+  }, [user]);
+
+  // ── RBAC-filtered nav sections ─────────────────────────────────────────────
+  const accessibleSections = useMemo<NavSection[]>(() => {
+    if (!user) return [];
+    return getAccessibleNavSections(user.role);
+  }, [user]);
+
+  // ── Active nav — default to first accessible section ──────────────────────
+  const [activeNav, setActiveNav] = useState<NavId | null>(null);
+  const [activeTab, setActiveTab] = useState("");
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  // Sidebar collapsed state lifted here so AppHeader toggle is in sync
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Set initial nav once sections are known
+  useEffect(() => {
+    if (accessibleSections.length > 0 && !activeNav) {
+      const first = accessibleSections[0];
+      setActiveNav(first.id);
+      const firstTabs = user
+        ? getAccessibleTabs(first.id, user.role)
+        : first.tabs;
+      setActiveTab(firstTabs[0] ?? "");
+    }
+  }, [accessibleSections, activeNav, user]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 1023px)");
@@ -49,17 +81,27 @@ export function CMSLayout({
 
   const handleNavChange = (id: NavId) => {
     setActiveNav(id);
-    setActiveTab(NAV_SECTIONS.find((s) => s.id === id)!.tabs[0]);
+    const section = accessibleSections.find((s) => s.id === id);
+    if (section) {
+      const tabs = user ? getAccessibleTabs(id, user.role) : section.tabs;
+      setActiveTab(tabs[0] ?? "");
+    }
   };
 
-  const handleLogout = () => setLogoutOpen(false); // wire real logout here
+  // Guard: nothing renders until nav is resolved
+  if (!activeNav || !activeTab) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      </div>
+    );
+  }
+
+  // Tabs visible to the current user for the active section
+  const visibleTabs = user ? getAccessibleTabs(activeNav, user.role) : [];
 
   return (
     <>
-      <style>{`
-        body { font-family: 'Inter', 'DM Sans', system-ui, sans-serif; }
-      `}</style>
-
       <div
         style={{
           height: "100dvh",
@@ -69,19 +111,20 @@ export function CMSLayout({
           overflow: "hidden",
         }}
       >
-        {/* ── DESKTOP: collapsible sidebar ─────────────────────────────── */}
+        {/* ── Desktop sidebar ───────────────────────────────────────── */}
         {!isMobile && (
           <Sidebar
             activeNav={activeNav}
             onNavChange={handleNavChange}
             onLogout={() => setLogoutOpen(true)}
-            user={user}
+            user={cmsUser}
             collapsed={sidebarCollapsed}
             onCollapsedChange={setSidebarCollapsed}
+            navSections={accessibleSections}
           />
         )}
 
-        {/* ── MAIN COLUMN ─────────────────────────────────────────────── */}
+        {/* ── Main column ───────────────────────────────────────────── */}
         <div
           style={{
             flex: 1,
@@ -97,19 +140,18 @@ export function CMSLayout({
             onTabChange={setActiveTab}
             onLogout={() => setLogoutOpen(true)}
             onChatOpen={onChatOpen}
-            user={user}
+            user={cmsUser}
             isMobile={isMobile}
             sidebarCollapsed={sidebarCollapsed}
             onSidebarToggle={() => setSidebarCollapsed((v) => !v)}
+            navSections={accessibleSections}
+            visibleTabs={visibleTabs}
           />
 
-          {/* Content area */}
           <div
             style={{
               flex: 1,
               overflowY: "auto",
-              /* Mobile: clear the bottom nav (64px) + home indicator safe area
-                 Desktop: standard breathing room */
               padding: isMobile
                 ? "0 16px calc(64px + var(--sab, 0px))"
                 : "0 24px 24px",
@@ -135,18 +177,18 @@ export function CMSLayout({
                   exit={{ opacity: 0, y: -8 }}
                   transition={EASE_OUT}
                   role="main"
-                  style={{ padding: isMobile ? 16 : 0, minHeight: "calc(100vh - 200px)" }}
+                  style={{
+                    padding: isMobile ? 16 : 0,
+                    minHeight: "calc(100vh - 200px)",
+                  }}
                 />
               )}
             </AnimatePresence>
           </div>
         </div>
 
-        {/* ── MOBILE: bottom nav + FAB ─────────────────────────────────── */}
+        {/* ── Mobile bottom nav ─────────────────────────────────────── */}
         {isMobile && (
-          /* Safe-area wrapper: sits at the bottom of the viewport and adds
-             env(safe-area-inset-bottom) padding so the nav bar clears the
-             iOS home indicator and Android gesture bar on all devices. */
           <div
             style={{
               position: "fixed",
@@ -157,21 +199,27 @@ export function CMSLayout({
               paddingBottom: "var(--sab, 0px)",
               background: TOKEN.surface,
               borderTop: `1px solid ${TOKEN.border}`,
-              /* Subtle backdrop so content scrolling beneath doesn't bleed */
               backdropFilter: "blur(12px)",
               WebkitBackdropFilter: "blur(12px)",
             }}
           >
-            <BottomNav activeNav={activeNav} onNavChange={handleNavChange} />
+            <BottomNav
+              activeNav={activeNav}
+              onNavChange={handleNavChange}
+              navSections={accessibleSections}
+            />
           </div>
         )}
         {isMobile && <FAB bottomOffset={80} />}
 
-        {/* ── LOGOUT MODAL ─────────────────────────────────────────────── */}
+        {/* ── Logout modal ──────────────────────────────────────────── */}
         <LogoutModal
           isOpen={logoutOpen}
           onClose={() => setLogoutOpen(false)}
-          onLogout={handleLogout}
+          onLogout={async () => {
+            setLogoutOpen(false);
+            await logout();
+          }}
         />
       </div>
     </>
