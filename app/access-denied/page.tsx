@@ -1,12 +1,13 @@
 "use client";
 
+import { Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/useAuth";
 import { getPrimaryRouteForRole } from "@/lib/roleAccess";
 import { ShieldOff, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export default function AccessDeniedPage() {
+function AccessDeniedContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user } = useAuth();
@@ -65,5 +66,13 @@ export default function AccessDeniedPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function AccessDeniedPage() {
+  return (
+    <Suspense fallback={null}>
+      <AccessDeniedContent />
+    </Suspense>
   );
 }
