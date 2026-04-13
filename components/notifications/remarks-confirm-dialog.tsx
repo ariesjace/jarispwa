@@ -9,16 +9,8 @@ import {
   AlertCircle,
   Package,
 } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { motion, AnimatePresence } from "framer-motion";
+import { TOKEN, SPRING_MED } from "@/components/layout/tokens";
 import { cn } from "@/lib/utils";
 import { PendingRequest } from "@/lib/requestService";
 
@@ -51,7 +43,6 @@ interface RemarksConfirmDialogProps {
   target: RemarksTarget | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  /** Called with the trimmed remarks string when user confirms */
   onConfirm: (
     action: RemarksAction,
     requestId: string,
@@ -69,7 +60,6 @@ export function RemarksConfirmDialog({
   const [error, setError] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Reset state whenever dialog opens for a new target
   useEffect(() => {
     if (open) {
       setRemarks("");
@@ -84,6 +74,10 @@ export function RemarksConfirmDialog({
   const displayName = getDisplayName(request);
   const itemCode = getItemCode(request);
   const remarksOk = remarks.trim().length > 0;
+
+  const primaryColor = isApprove ? "#10b981" : TOKEN.danger; // emerald-500 vs danger
+  const primaryBg = isApprove ? "#d1fae5" : TOKEN.dangerBg; // emerald-100 vs dangerBg
+  const PrimaryIcon = isApprove ? CheckCircle2 : XCircle;
 
   const handleConfirm = async () => {
     if (!remarksOk) {
@@ -100,158 +94,311 @@ export function RemarksConfirmDialog({
   };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        if (!v && !loading) {
-          setRemarks("");
-          setError(false);
-          onOpenChange(false);
-        }
-      }}
-    >
-      <DialogContent className="sm:max-w-lg rounded-none">
-        <DialogHeader>
-          <div className="flex items-center gap-3 mb-1">
-            <div
-              className={cn(
-                "w-9 h-9 rounded-none flex items-center justify-center shrink-0",
-                isApprove ? "bg-emerald-100" : "bg-rose-100",
-              )}
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            key="remarks-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => {
+              if (!loading) {
+                setRemarks("");
+                setError(false);
+                onOpenChange(false);
+              }
+            }}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(15,23,42,0.45)",
+              backdropFilter: "blur(4px)",
+              zIndex: 200,
+            }}
+          />
+
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 201,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 24,
+              pointerEvents: "none",
+            }}
+          >
+            <motion.div
+              key="remarks-dialog"
+              initial={{ opacity: 0, scale: 0.88, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.88, y: 20 }}
+              transition={SPRING_MED}
+              role="alertdialog"
+              aria-modal="true"
+              style={{
+                pointerEvents: "auto",
+                width: "100%",
+                maxWidth: 460,
+                background: TOKEN.surface,
+                borderRadius: 20,
+                border: `1px solid ${TOKEN.border}`,
+                boxShadow: "0 24px 64px -12px rgba(15,23,42,0.22)",
+                padding: 28,
+              }}
             >
-              {isApprove ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              ) : (
-                <XCircle className="w-4 h-4 text-rose-600" />
-              )}
-            </div>
-            <div>
-              <DialogTitle className="text-sm font-bold uppercase tracking-tight">
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  marginBottom: 20,
+                }}
+              >
+                <div
+                  style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: 14,
+                    background: primaryBg,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <PrimaryIcon size={24} color={primaryColor} />
+                </div>
+              </div>
+
+              <p
+                style={{
+                  fontSize: 18,
+                  fontWeight: 800,
+                  textAlign: "center",
+                  color: TOKEN.textPri,
+                  margin: "0 0 8px",
+                }}
+              >
                 {isApprove ? "Approve Request" : "Reject Request"}
-              </DialogTitle>
-              <DialogDescription className="text-xs mt-0.5">
+              </p>
+              <p
+                style={{
+                  fontSize: 13.5,
+                  textAlign: "center",
+                  color: TOKEN.textSec,
+                  margin: "0 0 24px",
+                  lineHeight: 1.6,
+                }}
+              >
                 {isApprove
                   ? "The request will be executed immediately after approval."
                   : "The request will be discarded and no changes will be applied."}
-              </DialogDescription>
-            </div>
-          </div>
-        </DialogHeader>
-
-        {/* Request identity */}
-        <div className="flex items-center gap-3 bg-muted/40 border px-3 py-2.5 rounded-none">
-          <div className="h-8 w-8 shrink-0 bg-background border flex items-center justify-center rounded-none">
-            <Package className="w-3.5 h-3.5 text-muted-foreground" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold truncate leading-tight">
-              {displayName}
-            </p>
-            {itemCode && (
-              <p className="text-[11px] text-muted-foreground font-mono">
-                {itemCode}
               </p>
-            )}
+
+              <div style={{ marginBottom: 24 }}>
+                <div
+                  style={{
+                    background: TOKEN.bg,
+                    border: `1px solid ${TOKEN.border}`,
+                    borderRadius: 12,
+                    padding: "12px 16px",
+                    marginBottom: 16,
+                  }}
+                >
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 12 }}
+                  >
+                    <div
+                      style={{
+                        width: 32,
+                        height: 32,
+                        background: TOKEN.surface,
+                        border: `1px solid ${TOKEN.border}`,
+                        borderRadius: 8,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Package size={16} color={TOKEN.textSec} />
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: TOKEN.textPri,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {displayName}
+                      </p>
+                      {itemCode && (
+                        <p
+                          style={{
+                            margin: "2px 0 0",
+                            fontSize: 11,
+                            fontFamily: "monospace",
+                            color: TOKEN.textSec,
+                          }}
+                        >
+                          {itemCode}
+                        </p>
+                      )}
+                    </div>
+                    <span
+                      className={cn(
+                        "flex-shrink-0 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border",
+                        request.type === "create" &&
+                          "bg-sky-50 text-sky-700 border-sky-200",
+                        request.type === "update" &&
+                          "bg-violet-50 text-violet-700 border-violet-200",
+                        request.type === "delete" &&
+                          "bg-rose-50 text-rose-700 border-rose-200",
+                      )}
+                    >
+                      {request.type}
+                    </span>
+                  </div>
+                </div>
+
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: TOKEN.textSec,
+                    textTransform: "uppercase",
+                    marginBottom: 8,
+                  }}
+                >
+                  <MessageSquare size={12} />
+                  Remarks
+                  <span style={{ color: TOKEN.danger }}>*</span>
+                </label>
+                <textarea
+                  autoFocus
+                  value={remarks}
+                  onChange={(e) => {
+                    setRemarks(e.target.value);
+                    if (e.target.value.trim()) setError(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      handleConfirm();
+                    }
+                  }}
+                  placeholder={
+                    isApprove
+                      ? "Explain why you are approving this request..."
+                      : "Explain why you are rejecting this request..."
+                  }
+                  style={{
+                    width: "100%",
+                    minHeight: 80,
+                    padding: "10px 14px",
+                    borderRadius: 10,
+                    border: `1px solid ${error ? TOKEN.danger : TOKEN.border}`,
+                    background: TOKEN.surface,
+                    fontSize: 14,
+                    outline: "none",
+                    resize: "none",
+                    boxSizing: "border-box",
+                    fontFamily: "inherit",
+                  }}
+                  disabled={loading}
+                />
+                {error && (
+                  <p
+                    style={{
+                      margin: "6px 0 0",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: 12,
+                      color: TOKEN.danger,
+                    }}
+                  >
+                    <AlertCircle size={14} /> Remarks are required.
+                  </p>
+                )}
+                <p
+                  style={{
+                    margin: "6px 0 0",
+                    fontSize: 10,
+                    color: TOKEN.textSec,
+                  }}
+                >
+                  Tip: Press Ctrl+Enter / ⌘+Enter to confirm.
+                </p>
+              </div>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => onOpenChange(false)}
+                  disabled={loading}
+                  style={{
+                    flex: 1,
+                    padding: "11px 0",
+                    borderRadius: 12,
+                    border: `1px solid ${TOKEN.border}`,
+                    background: TOKEN.surface,
+                    color: TOKEN.textSec,
+                    fontSize: 13.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                  }}
+                >
+                  Cancel
+                </motion.button>
+
+                <motion.button
+                  whileHover={{ scale: remarksOk ? 1.02 : 1 }}
+                  whileTap={{ scale: remarksOk ? 0.97 : 1 }}
+                  onClick={handleConfirm}
+                  disabled={loading || !remarksOk}
+                  style={{
+                    flex: 2,
+                    padding: "11px 0",
+                    borderRadius: 12,
+                    border: "none",
+                    background: remarksOk ? primaryColor : TOKEN.border,
+                    opacity: remarksOk ? 1 : 0.6,
+                    color: remarksOk ? "#fff" : TOKEN.textSec,
+                    fontSize: 13.5,
+                    fontWeight: 600,
+                    cursor: remarksOk ? "pointer" : "not-allowed",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                  }}
+                >
+                  {loading ? (
+                    <span>Processing...</span>
+                  ) : (
+                    <>
+                      <PrimaryIcon size={16} />
+                      {isApprove ? "Approve & Execute" : "Reject"}
+                    </>
+                  )}
+                </motion.button>
+              </div>
+            </motion.div>
           </div>
-          <span
-            className={cn(
-              "ml-auto shrink-0 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border",
-              request.type === "create" &&
-                "bg-sky-50 text-sky-700 border-sky-200",
-              request.type === "update" &&
-                "bg-violet-50 text-violet-700 border-violet-200",
-              request.type === "delete" &&
-                "bg-rose-50 text-rose-700 border-rose-200",
-            )}
-          >
-            {request.type}
-          </span>
-        </div>
-
-        {/* Remarks */}
-        <div className="space-y-1.5">
-          <label className="text-[10px] font-bold uppercase text-muted-foreground tracking-wider flex items-center gap-1.5">
-            <MessageSquare className="w-3 h-3" />
-            Remarks
-            <span className="text-destructive">*</span>
-          </label>
-          <Textarea
-            autoFocus
-            value={remarks}
-            onChange={(e) => {
-              setRemarks(e.target.value);
-              if (e.target.value.trim()) setError(false);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                handleConfirm();
-              }
-            }}
-            placeholder={
-              isApprove
-                ? "Explain why you are approving this request…"
-                : "Explain why you are rejecting this request…"
-            }
-            className={cn(
-              "rounded-none resize-none min-h-[80px] text-sm",
-              error && "border-destructive focus-visible:ring-destructive/30",
-            )}
-            disabled={loading}
-          />
-          {error && (
-            <p className="flex items-center gap-1.5 text-xs text-destructive">
-              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              Remarks are required before proceeding.
-            </p>
-          )}
-          <p className="text-[10px] text-muted-foreground">
-            Tip: Press Ctrl+Enter / ⌘+Enter to confirm.
-          </p>
-        </div>
-
-        <DialogFooter className="gap-2 sm:gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="rounded-none"
-            onClick={() => onOpenChange(false)}
-            disabled={loading}
-          >
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            className={cn(
-              "rounded-none gap-1.5",
-              isApprove
-                ? remarksOk
-                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                  : "bg-emerald-200 text-emerald-400 cursor-not-allowed"
-                : remarksOk
-                  ? "bg-rose-600 hover:bg-rose-700 text-white"
-                  : "bg-rose-200 text-rose-400 cursor-not-allowed",
-            )}
-            onClick={handleConfirm}
-            disabled={loading || !remarksOk}
-          >
-            {loading ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : isApprove ? (
-              <CheckCircle2 className="w-3.5 h-3.5" />
-            ) : (
-              <XCircle className="w-3.5 h-3.5" />
-            )}
-            {loading
-              ? isApprove
-                ? "Approving…"
-                : "Rejecting…"
-              : isApprove
-                ? "Approve & Execute"
-                : "Reject"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      )}
+    </AnimatePresence>
   );
 }
