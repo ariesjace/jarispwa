@@ -31,7 +31,7 @@ export default function RootPage() {
     if (isLoading) return;
 
     if (!user) {
-      router.replace("/auth/login");
+      router.replace("/auth");
       return;
     }
 
