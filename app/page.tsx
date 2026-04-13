@@ -62,20 +62,6 @@ function PageShell({
           padding: "24px 0 28px",
         }}
       >
-        <div
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: 14,
-            background: `${accent}18`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-          }}
-        >
-          <Icon size={22} color={accent} />
-        </div>
         <div>
           <h1
             style={{
