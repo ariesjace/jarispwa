@@ -16,6 +16,8 @@ import {
   TOKEN,
   type NavId,
 } from "@/components/layout";
+import AllProductsPage from "@/components/pages/products/AllProducts";
+import ProductRequestsPage from "@/components/pages/products/ProductRequests";
 
 import {
   Package,
@@ -235,34 +237,31 @@ function CardHeader({ title, count }: { title: string; count?: number }) {
 function ProductsSection({ tab }: { tab: string }) {
   if (tab === "All Products") {
     return (
-      <PageShell
-        icon={Package}
-        title="All Products"
-        subtitle="Manage your full product catalogue"
-        accent={TOKEN.primary}
-      >
-        {/* Stats row */}
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 20 }}>
-          <StatCard label="Total SKUs" value="1,248" delta="↑ 32 this month" accent="#22c55e" />
-          <StatCard label="Active" value="1,094" accent={TOKEN.primary} />
-          <StatCard label="Out of Stock" value="154" delta="↓ 8 from last week" accent="#f59e0b" />
-          <StatCard label="Pending Review" value="23" accent={TOKEN.secondary} />
-        </div>
+        <div style={{ width: "100%", height: "100%", animation: "fadeIn 0.4s ease-out" }}>
+          <AllProductsPage />
 
-        {/* Recent products */}
-        <Card>
-          <CardHeader title="Recent Products" count={12} />
-          {[
-            { name: "Taskflow Pro Seat", sku: "TF-PRO-001", badge: "Active", color: "#22c55e" },
-            { name: "Analytics Add-on", sku: "TF-ANA-002", badge: "Draft", color: "#f59e0b" },
-            { name: "Shopify Connector", sku: "SH-CON-001", badge: "Active", color: "#22c55e" },
-            { name: "Enterprise Bundle", sku: "ENT-BUN-010", badge: "Active", color: "#22c55e" },
-            { name: "Support Tier – Gold", sku: "SUP-GLD-003", badge: "Archived", color: TOKEN.textSec },
-          ].map((p) => (
-            <DataRow key={p.sku} label={p.name} meta={p.sku} badge={p.badge} badgeColor={p.color} />
-          ))}
-        </Card>
-      </PageShell>
+          <style jsx global>{`
+            @keyframes fadeIn {
+              from { opacity: 0; transform: translateY(4px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
+          `}</style>
+        </div>
+    );
+  }
+
+  if (tab === "Requests") {
+    return (
+        <div style={{ width: "100%", height: "100%", animation: "fadeIn 0.4s ease-out" }}>
+          <ProductRequestsPage />
+
+          <style jsx global>{`
+            @keyframes fadeIn {
+              from { opacity: 0; transform: translateY(4px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
+          `}</style>
+        </div>
     );
   }
 

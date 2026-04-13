@@ -12,9 +12,9 @@ import React, { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Bell, MessageSquare, LogOut,
-  CheckCheck, AlertCircle, ShoppingCart, Users,
   PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
+import { NotificationsDropdown } from "@/components/notifications/notifications-dropdown";
 import { TOKEN, SPRING_FAST, SPRING_MED } from "./tokens";
 import { NavAvatar } from "./NavAvatar";
 import { NAV_SECTIONS, type NavId, type CmsUser } from "./nav-data";
@@ -110,265 +110,7 @@ function SidebarToggleButton({ collapsed, onToggle }: SidebarToggleButtonProps) 
   );
 }
 
-// ── NotificationsButton ───────────────────────────────────────────────────────
 
-const NOTIFICATIONS = [
-  { id: 1, Icon: ShoppingCart, title: "New order received", meta: "Order #ORD-9922 — $240.00", time: "2m ago", unread: true, color: TOKEN.primary },
-  { id: 2, Icon: Users, title: "New job application", meta: "Jamie Okonkwo — Senior Eng.", time: "18m ago", unread: true, color: TOKEN.secondary },
-  { id: 3, Icon: AlertCircle, title: "Low stock alert", meta: "SKU: TF-PRO-001 — 3 left", time: "1h ago", unread: true, color: "#f59e0b" },
-  { id: 4, Icon: CheckCheck, title: "Review approved", meta: "Taskflow Pro — ★★★★★", time: "3h ago", unread: false, color: "#22c55e" },
-  { id: 5, Icon: ShoppingCart, title: "Order fulfilled", meta: "Order #ORD-9918 — Shipped", time: "5h ago", unread: false, color: TOKEN.primary },
-];
-
-function NotificationsButton() {
-  const [open, setOpen] = useState(false);
-  const [items, setItems] = useState(NOTIFICATIONS);
-  const ref = useRef<HTMLDivElement>(null);
-  const unreadCount = items.filter((n) => n.unread).length;
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  const markAllRead = () => setItems((prev) => prev.map((n) => ({ ...n, unread: false })));
-
-  return (
-    <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
-      {/* Trigger */}
-      <motion.button
-        whileHover={{ scale: 1.06 }}
-        whileTap={{ scale: 0.9 }}
-        onClick={() => setOpen((v) => !v)}
-        aria-label={`Notifications${unreadCount ? ` (${unreadCount} unread)` : ""}`}
-        aria-expanded={open}
-        style={{
-          position: "relative",
-          width: 36,
-          height: 36,
-          borderRadius: 10,
-          border: `1px solid ${TOKEN.border}`,
-          background: open ? `${TOKEN.primary}10` : TOKEN.surface,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          cursor: "pointer",
-          color: open ? TOKEN.primary : TOKEN.textSec,
-          transition: "background 0.15s, color 0.15s",
-        }}
-      >
-        <Bell size={16} />
-        {unreadCount > 0 && (
-          <motion.span
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            style={{
-              position: "absolute",
-              top: 5,
-              right: 5,
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: TOKEN.danger,
-              border: `2px solid ${TOKEN.surface}`,
-            }}
-          />
-        )}
-      </motion.button>
-
-      {/* Dropdown */}
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            key="notif-panel"
-            initial={{ opacity: 0, scale: 0.93, y: -6 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.93, y: -6 }}
-            transition={SPRING_MED}
-            style={{
-              position: "absolute",
-              top: "calc(100% + 10px)",
-              right: 0,
-              width: 320,
-              background: TOKEN.surface,
-              borderRadius: 18,
-              border: `1px solid ${TOKEN.border}`,
-              boxShadow: "0 16px 48px -8px rgba(15,23,42,0.16)",
-              overflow: "hidden",
-              transformOrigin: "top right",
-              zIndex: 200,
-            }}
-          >
-            {/* Header */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "14px 16px 12px",
-                borderBottom: `1px solid ${TOKEN.border}`,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <p style={{ margin: 0, fontSize: 13.5, fontWeight: 700, color: TOKEN.textPri }}>
-                  Notifications
-                </p>
-                {unreadCount > 0 && (
-                  <span
-                    style={{
-                      fontSize: 10.5,
-                      fontWeight: 700,
-                      color: "#fff",
-                      background: TOKEN.danger,
-                      borderRadius: 999,
-                      padding: "1px 7px",
-                    }}
-                  >
-                    {unreadCount}
-                  </span>
-                )}
-              </div>
-              {unreadCount > 0 && (
-                <motion.button
-                  whileTap={{ scale: 0.95 }}
-                  onClick={markAllRead}
-                  style={{
-                    fontSize: 11.5,
-                    fontWeight: 600,
-                    color: TOKEN.primary,
-                    background: "none",
-                    border: "none",
-                    cursor: "pointer",
-                    padding: "2px 6px",
-                    borderRadius: 6,
-                  }}
-                >
-                  Mark all read
-                </motion.button>
-              )}
-            </div>
-
-            {/* Items */}
-            <div style={{ maxHeight: 340, overflowY: "auto" }}>
-              {items.map((n) => (
-                <motion.div
-                  key={n.id}
-                  whileHover={{ background: TOKEN.bg }}
-                  onClick={() =>
-                    setItems((prev) =>
-                      prev.map((x) => (x.id === n.id ? { ...x, unread: false } : x))
-                    )
-                  }
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 12,
-                    padding: "12px 16px",
-                    borderBottom: `1px solid ${TOKEN.border}`,
-                    cursor: "pointer",
-                    background: n.unread ? `${TOKEN.primary}06` : "transparent",
-                    transition: "background 0.15s",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: 10,
-                      background: `${n.color}18`,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                      marginTop: 1,
-                    }}
-                  >
-                    <n.Icon size={15} color={n.color} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        gap: 8,
-                      }}
-                    >
-                      <p
-                        style={{
-                          margin: 0,
-                          fontSize: 12.5,
-                          fontWeight: n.unread ? 700 : 600,
-                          color: TOKEN.textPri,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {n.title}
-                      </p>
-                      {n.unread && (
-                        <span
-                          style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: "50%",
-                            background: TOKEN.primary,
-                            flexShrink: 0,
-                          }}
-                        />
-                      )}
-                    </div>
-                    <p
-                      style={{
-                        margin: "2px 0 0",
-                        fontSize: 11.5,
-                        color: TOKEN.textSec,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {n.meta}
-                    </p>
-                    <p style={{ margin: "3px 0 0", fontSize: 10.5, color: TOKEN.textSec, opacity: 0.7 }}>
-                      {n.time}
-                    </p>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-
-            {/* Footer */}
-            <div style={{ padding: "10px 16px" }}>
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                onClick={() => setOpen(false)}
-                style={{
-                  width: "100%",
-                  padding: "9px 0",
-                  borderRadius: 10,
-                  border: `1px solid ${TOKEN.border}`,
-                  background: TOKEN.bg,
-                  color: TOKEN.textSec,
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                View all notifications
-              </motion.button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
 
 // ── ChatButton ────────────────────────────────────────────────────────────────
 
@@ -665,7 +407,7 @@ export function AppHeader({
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
               <ChatButton onClick={onChatOpen} />
-              <NotificationsButton />
+              <NotificationsDropdown />
               <AvatarDropdown user={user} onLogout={onLogout} />
             </div>
           </div>
@@ -736,7 +478,7 @@ export function AppHeader({
               }}
             >
               <ChatButton onClick={onChatOpen} />
-              <NotificationsButton />
+              <NotificationsDropdown />
             </div>
           )}
         </div>
