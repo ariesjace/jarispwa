@@ -48,17 +48,17 @@ export const roleAccessConfig: RoleAccessConfig = {
     "/admin/deleted-products",
     "/admin/audit-logs",
   ],
-  pd_engineer: ["/products/all-products", "/products/requests"],
-  pd: ["/products/all-products", "/products/requests"],
+  pd_engineer: ["/products", "/products"],
+  pd: ["/products", "/products"],
 
-  project_sales: ["/products/all-products"],
+  project_sales: ["/products"],
 
-  hr: ["/jobs/applications", "/jobs/careers"],
+  hr: ["/jobs"],
 
   seo: ["/content"],
   marketing: ["/content"],
 
-  csr: ["/inquiries/customer-inquiries"],
+  csr: ["/inquiries"],
 
   warehouse: ["/access-denied"],
   staff: ["/access-denied"],
