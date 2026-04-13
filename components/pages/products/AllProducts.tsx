@@ -28,7 +28,6 @@ import {
   Package,
   ChevronLeft,
   ChevronRight,
-  CheckCircle2,
   ListFilter,
   Check,
   ChevronDown,
@@ -84,6 +83,10 @@ export default function AllProductsPage() {
 
   // Mobile specific state
   const [isMobile, setIsMobile] = useState(false);
+
+  // Filter drawer state
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+  const [filterCategory, setFilterCategory] = useState<"family" | "class" | "usage" | null>(null);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 1024);
@@ -168,11 +171,11 @@ export default function AllProductsPage() {
           <div style={{ marginLeft: 8 }}>
             <Checkbox
               checked={
-                table.getIsAllPageRowsSelected() ||
-                (table.getIsSomePageRowsSelected() && "indeterminate")
+                table.getIsAllRowsSelected() ||
+                (table.getIsSomeRowsSelected() && "indeterminate")
               }
               onCheckedChange={(value) =>
-                table.toggleAllPageRowsSelected(!!value)
+                table.toggleAllRowsSelected(!!value)
               }
               aria-label="Select all"
             />
@@ -338,6 +341,36 @@ export default function AllProductsPage() {
         ),
         enableSorting: false,
       },
+      // ─── Hidden filter-only columns ───────────────────────────────────────
+      {
+        id: "productClass",
+        accessorKey: "productClass",
+        enableHiding: true,
+        filterFn: (row, _columnId, filterValue) => {
+          if (!filterValue) return true;
+          const cls = (row.original.productClass || "").toLowerCase();
+          return cls === (filterValue as string).toLowerCase();
+        },
+        header: () => null,
+        cell: () => null,
+      },
+      {
+        id: "productUsage",
+        accessorFn: (row) => {
+          const u = row.productUsage;
+          return Array.isArray(u) ? u.join(",") : (u || "");
+        },
+        filterFn: (row, _columnId, filterValue) => {
+          if (!filterValue) return true;
+          const u = row.original.productUsage;
+          const usages: string[] = Array.isArray(u) ? u : u ? [u] : [];
+          return usages.some(
+            (v) => v.toUpperCase() === (filterValue as string).toUpperCase(),
+          );
+        },
+        header: () => null,
+        cell: () => null,
+      },
     ],
     [],
   );
@@ -351,6 +384,7 @@ export default function AllProductsPage() {
       columnFilters,
       globalFilter,
       rowSelection,
+      columnVisibility: { productClass: false, productUsage: false },
     },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -375,6 +409,23 @@ export default function AllProductsPage() {
       ).sort(),
     [data],
   );
+  const uniqueClasses = useMemo(
+    () =>
+      Array.from(new Set(data.map((p) => p.productClass).filter(Boolean))).sort(),
+    [data],
+  );
+  const uniqueUsages = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          data.flatMap((p) => {
+            const u = p.productUsage;
+            return Array.isArray(u) ? u : u ? [u] : [];
+          }).filter(Boolean),
+        ),
+      ).sort(),
+    [data],
+  );
   const activeFamilyFilter =
     (table.getColumn("productFamily")?.getFilterValue() as string) ?? "";
 
@@ -394,32 +445,46 @@ export default function AllProductsPage() {
     table.resetRowSelection();
   };
 
-  // MOBILE EVENT HANDLERS (DOUBLE TAP)
-  const lastTapRef = useRef<{ id: string; time: number } | null>(null);
+  // MOBILE EVENT HANDLERS (LONG PRESS → enter bulk; single tap in bulk → toggle)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressActiveRef = useRef(false);
 
-  const handleCardTap = (id: string) => {
-    // If we are already in bulk selection mode, a single tap should toggle selection
-    if (isBulk) {
-      const row = table.getRowModel().rows.find((r) => r.id === id);
-      row?.toggleSelected();
-      return;
-    }
-
-    const now = Date.now();
-    const lastTap = lastTapRef.current;
-
-    // Check if the same card was tapped within 400ms
-    if (lastTap && lastTap.id === id && now - lastTap.time < 400) {
-      const row = table.getRowModel().rows.find((r) => r.id === id);
-      if (row && !row.getIsSelected()) {
+  const handleCardPressStart = useCallback((id: string) => {
+    if (isBulk) return; // already in bulk mode, long-press not needed
+    longPressActiveRef.current = false;
+    longPressTimerRef.current = setTimeout(() => {
+      longPressActiveRef.current = true;
+      const row = table.getFilteredRowModel().rows.find((r) => r.id === id);
+      if (row) {
+        navigator.vibrate?.(60);
         row.toggleSelected(true);
       }
-      lastTapRef.current = null; // Reset after a successful double tap
-    } else {
-      // Register the first tap
-      lastTapRef.current = { id, time: now };
+    }, 500);
+  }, [isBulk, table]);
+
+  const handleCardPressEnd = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
     }
-  };
+  }, []);
+
+  const handleCardTap = useCallback((id: string) => {
+    // Suppress click if this was a long press that already selected the item
+    if (longPressActiveRef.current) {
+      longPressActiveRef.current = false;
+      return;
+    }
+    // In bulk mode, single tap toggles selection
+    if (isBulk) {
+      const row = table.getFilteredRowModel().rows.find((r) => r.id === id);
+      if (row) {
+        navigator.vibrate?.(50);
+        row.toggleSelected();
+      }
+    }
+    // else: normal tap → navigate / open product (no-op for now)
+  }, [isBulk, table]);
 
   if (isLoading) {
     return (
@@ -476,6 +541,14 @@ export default function AllProductsPage() {
           background: TOKEN.bg,
           paddingTop: 16,
           paddingBottom: 16,
+          // Extend full-width past the parent's horizontal padding so cards
+          // never "bleed" through the gaps on either edge
+          marginLeft: isMobile ? -16 : -24,
+          marginRight: isMobile ? -16 : -24,
+          paddingLeft: isMobile ? 16 : 24,
+          paddingRight: isMobile ? 16 : 24,
+          // Bottom shadow that matches the background colour — acts as a mask
+          boxShadow: `0 8px 0 0 ${TOKEN.bg}, 0 9px 0 0 ${TOKEN.border}22`,
         }}
       >
         {/* PAGE HEADER */}
@@ -592,12 +665,15 @@ export default function AllProductsPage() {
                   }}
                 >
                   <Checkbox
-                    checked={table.getIsAllPageRowsSelected()}
+                    checked={
+                      table.getIsAllRowsSelected() ||
+                      (table.getIsSomeRowsSelected() && "indeterminate")
+                    }
                     onCheckedChange={(value) =>
-                      table.toggleAllPageRowsSelected(!!value)
+                      table.toggleAllRowsSelected(!!value)
                     }
                   />
-                  Select All
+                  Select All ({table.getFilteredRowModel().rows.length})
                 </label>
               </div>
 
@@ -733,71 +809,38 @@ export default function AllProductsPage() {
             </div>
 
             <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
+              <button
+                style={{
+                  ...filterBtnStyle,
+                  position: "relative",
+                  padding: isMobile ? "10px 12px" : "10px 16px",
+                  background: (activeFamilyFilter || columnFilters.some(f => f.id === "productClass" || f.id === "productUsage")) ? `${TOKEN.primary}10` : TOKEN.surface,
+                  borderColor: (activeFamilyFilter || columnFilters.some(f => f.id === "productClass" || f.id === "productUsage")) ? TOKEN.primary : TOKEN.border,
+                }}
+                onClick={() => setFilterDrawerOpen(true)}
+              >
+                <ListFilter size={16} />
+                {!isMobile && (
+                  <>
+                    Filter
+                  </>
+                )}
+                {(activeFamilyFilter || columnFilters.some(f => f.id === "productClass" || f.id === "productUsage")) && (
+                  <span
                     style={{
-                      ...filterBtnStyle,
-                      position: "relative",
-                      padding: isMobile ? "10px 12px" : "10px 16px",
+                      position: isMobile ? "absolute" : "static",
+                      top: isMobile ? 8 : "auto",
+                      right: isMobile ? 8 : "auto",
+                      marginLeft: isMobile ? 0 : 4,
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: TOKEN.primary,
+                      border: isMobile ? `2px solid ${TOKEN.surface}` : "none",
                     }}
-                  >
-                    <ListFilter size={16} />
-                    {!isMobile && (
-                      <>
-                        Filter <ChevronDown size={14} />
-                      </>
-                    )}
-                    {activeFamilyFilter && (
-                      <span
-                        style={{
-                          position: isMobile ? "absolute" : "static",
-                          top: isMobile ? 8 : "auto",
-                          right: isMobile ? 8 : "auto",
-                          marginLeft: isMobile ? 0 : 4,
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          background: TOKEN.primary,
-                          border: isMobile
-                            ? `2px solid ${TOKEN.surface}`
-                            : "none",
-                        }}
-                      />
-                    )}
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align={isMobile ? "end" : "end"}
-                  className="w-56"
-                >
-                  <DropdownMenuLabel>Product Family</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() =>
-                      table.getColumn("productFamily")?.setFilterValue("")
-                    }
-                  >
-                    All Families{" "}
-                    {activeFamilyFilter === "" && (
-                      <Check size={14} className="ml-auto" />
-                    )}
-                  </DropdownMenuItem>
-                  {uniqueFamilies.map((fam) => (
-                    <DropdownMenuItem
-                      key={fam as string}
-                      onClick={() =>
-                        table.getColumn("productFamily")?.setFilterValue(fam)
-                      }
-                    >
-                      {fam as string}
-                      {activeFamilyFilter === fam && (
-                        <Check size={14} className="ml-auto" />
-                      )}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                  />
+                )}
+              </button>
 
               {!isMobile && (
                 <>
@@ -816,6 +859,54 @@ export default function AllProductsPage() {
           </div>
         )}
       </div>
+
+      {/* ACTIVE FILTER CHIPS */}
+      {(activeFamilyFilter || (table.getColumn("productClass")?.getFilterValue() as string) || (table.getColumn("productUsage")?.getFilterValue() as string)) && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, paddingBottom: 12 }}>
+          {activeFamilyFilter && (
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              fontSize: 11, fontWeight: 700, padding: "5px 10px",
+              background: `${TOKEN.primary}12`, border: `1px solid ${TOKEN.primary}30`,
+              color: TOKEN.primary, borderRadius: 20,
+            }}>
+              Family: {activeFamilyFilter}
+              <button
+                onClick={() => table.getColumn("productFamily")?.setFilterValue("")}
+                style={{ background: "none", border: "none", cursor: "pointer", color: TOKEN.primary, padding: 0, display: "flex", lineHeight: 1 }}
+              ><X size={12} /></button>
+            </span>
+          )}
+          {(table.getColumn("productClass")?.getFilterValue() as string) && (
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              fontSize: 11, fontWeight: 700, padding: "5px 10px",
+              background: `${TOKEN.primary}12`, border: `1px solid ${TOKEN.primary}30`,
+              color: TOKEN.primary, borderRadius: 20,
+            }}>
+              Class: {table.getColumn("productClass")?.getFilterValue() as string}
+              <button
+                onClick={() => table.getColumn("productClass")?.setFilterValue("")}
+                style={{ background: "none", border: "none", cursor: "pointer", color: TOKEN.primary, padding: 0, display: "flex", lineHeight: 1 }}
+              ><X size={12} /></button>
+            </span>
+          )}
+          {(table.getColumn("productUsage")?.getFilterValue() as string) && (
+            <span style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              fontSize: 11, fontWeight: 700, padding: "5px 10px",
+              background: `${TOKEN.primary}12`, border: `1px solid ${TOKEN.primary}30`,
+              color: TOKEN.primary, borderRadius: 20,
+            }}>
+              Usage: {table.getColumn("productUsage")?.getFilterValue() as string}
+              <button
+                onClick={() => table.getColumn("productUsage")?.setFilterValue("")}
+                style={{ background: "none", border: "none", cursor: "pointer", color: TOKEN.primary, padding: 0, display: "flex", lineHeight: 1 }}
+              ><X size={12} /></button>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* DESKTOP TABLE */}
       <div className="desktop-view" style={tableContainerStyle}>
@@ -927,6 +1018,7 @@ export default function AllProductsPage() {
           display: "flex",
           flexDirection: "column",
           gap: 12,
+          paddingTop: 8,
           paddingBottom: 100,
         }}
       >
@@ -941,34 +1033,20 @@ export default function AllProductsPage() {
               style={{
                 ...mobileCardStyle,
                 border: isSelected
-                  ? `1px solid ${TOKEN.primary}`
+                  ? `2px solid ${TOKEN.primary}`
                   : `1px solid ${TOKEN.border}`,
-                background: isSelected ? `${TOKEN.primary}05` : TOKEN.surface,
+                background: isSelected ? `${TOKEN.primary}08` : TOKEN.surface,
                 position: "relative",
+                // prevent text selection during long press
+                WebkitUserSelect: "none",
+                userSelect: "none",
               }}
+              onPointerDown={() => handleCardPressStart(row.id)}
+              onPointerUp={handleCardPressEnd}
+              onPointerLeave={handleCardPressEnd}
+              onPointerCancel={handleCardPressEnd}
               onClick={() => handleCardTap(row.id)}
             >
-              {/* Checkbox overlay if selected */}
-              {isSelected && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: -8,
-                    right: -8,
-                    background: TOKEN.primary,
-                    borderRadius: "50%",
-                    width: 24,
-                    height: 24,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    zIndex: 10,
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-                  }}
-                >
-                  <CheckCircle2 size={16} color="#fff" />
-                </div>
-              )}
               <div style={{ display: "flex", gap: 16 }}>
                 {/* Img Left */}
                 <div style={mobileImgStyle}>
@@ -1116,6 +1194,351 @@ export default function AllProductsPage() {
             { label: "Bulk Download TDS", Icon: Download, color: TOKEN.accent },
           ]}
         />
+      )}
+
+      {/* FILTER DRAWER */}
+      {filterDrawerOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.45)",
+              zIndex: 100,
+              backdropFilter: "blur(3px)",
+              WebkitBackdropFilter: "blur(3px)",
+            }}
+            onClick={() => { setFilterDrawerOpen(false); setFilterCategory(null); }}
+          />
+          {/* Panel — bottom-sheet on mobile, right-panel on desktop */}
+          <div
+            style={isMobile ? {
+              position: "fixed",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              maxHeight: "75vh",
+              background: TOKEN.surface,
+              borderTop: `1px solid ${TOKEN.border}`,
+              borderRadius: "24px 24px 0 0",
+              zIndex: 101,
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: "0 -8px 32px rgba(0,0,0,0.18)",
+            } : {
+              position: "fixed",
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: 340,
+              background: TOKEN.surface,
+              borderLeft: `1px solid ${TOKEN.border}`,
+              zIndex: 101,
+              display: "flex",
+              flexDirection: "column",
+              boxShadow: "-8px 0 32px rgba(0,0,0,0.12)",
+            }}
+          >
+            {/* Drag handle (mobile only) */}
+            {isMobile && (
+              <div style={{ display: "flex", justifyContent: "center", paddingTop: 12, paddingBottom: 4 }}>
+                <div style={{ width: 36, height: 4, borderRadius: 2, background: TOKEN.border }} />
+              </div>
+            )}
+            {/* Drawer Header */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "20px 20px 16px",
+                borderBottom: `1px solid ${TOKEN.border}`,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {filterCategory && (
+                  <button
+                    onClick={() => setFilterCategory(null)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: TOKEN.textSec,
+                      padding: 4,
+                      display: "flex",
+                      alignItems: "center",
+                    }}
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                )}
+                <span style={{ fontSize: 15, fontWeight: 800, color: TOKEN.textPri }}>
+                  {filterCategory === "family" ? "Product Family" : filterCategory === "class" ? "Product Class" : filterCategory === "usage" ? "Product Usage" : "Filters"}
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {!filterCategory && (
+                  <button
+                    onClick={() => {
+                      table.getColumn("productFamily")?.setFilterValue("");
+                      table.getColumn("productClass")?.setFilterValue("");
+                      table.getColumn("productUsage")?.setFilterValue("");
+                    }}
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: TOKEN.primary,
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      padding: "4px 8px",
+                    }}
+                  >
+                    Clear All
+                  </button>
+                )}
+                <button
+                  onClick={() => { setFilterDrawerOpen(false); setFilterCategory(null); }}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: TOKEN.textSec,
+                    padding: 4,
+                    display: "flex",
+                    alignItems: "center",
+                  }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Drawer Body */}
+            <div style={{ flex: 1, overflowY: "auto" }}>
+              {/* Category List (root level) */}
+              {!filterCategory && (
+                <div style={{ padding: "12px 0" }}>
+                  {[
+                    {
+                      key: "family" as const,
+                      label: "Family",
+                      subtitle: `${uniqueFamilies.length} options`,
+                      activeValue: activeFamilyFilter,
+                    },
+                    {
+                      key: "class" as const,
+                      label: "Class",
+                      subtitle: `${uniqueClasses.length} options`,
+                      activeValue: (table.getColumn("productClass")?.getFilterValue() as string) ?? "",
+                    },
+                    {
+                      key: "usage" as const,
+                      label: "Usage",
+                      subtitle: `${uniqueUsages.length} options`,
+                      activeValue: (table.getColumn("productUsage")?.getFilterValue() as string) ?? "",
+                    },
+                  ].map(({ key, label, subtitle, activeValue }) => (
+                    <button
+                      key={key}
+                      onClick={() => setFilterCategory(key)}
+                      style={{
+                        width: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "16px 20px",
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        borderBottom: `1px solid ${TOKEN.border}`,
+                        textAlign: "left",
+                      }}
+                    >
+                      <div>
+                        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: TOKEN.textPri }}>{label}</p>
+                        <p style={{ margin: "2px 0 0", fontSize: 11, color: activeValue ? TOKEN.primary : TOKEN.textSec, fontWeight: 600 }}>
+                          {activeValue || subtitle}
+                        </p>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {activeValue && (
+                          <span style={{
+                            width: 8, height: 8, borderRadius: "50%",
+                            background: TOKEN.primary, flexShrink: 0,
+                          }} />
+                        )}
+                        <ChevronRight size={16} color={TOKEN.textSec} />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Family Values — with product counts from Firestore data */}
+              {filterCategory === "family" && (
+                <div style={{ padding: "8px 0" }}>
+                  {["", ...uniqueFamilies].map((fam, i) => {
+                    const label = fam || "All Families";
+                    const isActive = activeFamilyFilter === fam;
+                    const count = fam
+                      ? data.filter((p) => (p.productFamily || p.categories) === fam).length
+                      : data.length;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          table.getColumn("productFamily")?.setFilterValue(fam);
+                          setFilterCategory(null);
+                        }}
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "14px 20px",
+                          background: isActive ? `${TOKEN.primary}08` : "none",
+                          border: "none",
+                          borderBottom: `1px solid ${TOKEN.border}`,
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <span style={{ fontSize: 13.5, fontWeight: isActive ? 700 : 500, color: isActive ? TOKEN.primary : TOKEN.textPri, flex: 1, textAlign: "left" }}>
+                          {label as string}
+                        </span>
+                        <span style={{
+                          fontSize: 11, fontWeight: 700,
+                          color: isActive ? TOKEN.primary : TOKEN.textSec,
+                          background: isActive ? `${TOKEN.primary}12` : TOKEN.bg,
+                          padding: "2px 8px", borderRadius: 6, marginRight: 8,
+                        }}>
+                          {count}
+                        </span>
+                        {isActive && <Check size={15} color={TOKEN.primary} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Class Values — with product counts */}
+              {filterCategory === "class" && (
+                <div style={{ padding: "8px 0" }}>
+                  {["", ...uniqueClasses].map((cls, i) => {
+                    const label = cls || "All Classes";
+                    const activeClassFilter = (table.getColumn("productClass")?.getFilterValue() as string) ?? "";
+                    const isActive = activeClassFilter === cls;
+                    const count = cls
+                      ? data.filter((p) => (p.productClass || "").toLowerCase() === cls.toLowerCase()).length
+                      : data.length;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          table.getColumn("productClass")?.setFilterValue(cls);
+                          setFilterCategory(null);
+                        }}
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "14px 20px",
+                          background: isActive ? `${TOKEN.primary}08` : "none",
+                          border: "none",
+                          borderBottom: `1px solid ${TOKEN.border}`,
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <span style={{ fontSize: 13.5, fontWeight: isActive ? 700 : 500, color: isActive ? TOKEN.primary : TOKEN.textPri, flex: 1, textAlign: "left" }}>
+                          {label as string}
+                        </span>
+                        <span style={{
+                          fontSize: 11, fontWeight: 700,
+                          color: isActive ? TOKEN.primary : TOKEN.textSec,
+                          background: isActive ? `${TOKEN.primary}12` : TOKEN.bg,
+                          padding: "2px 8px", borderRadius: 6, marginRight: 8,
+                        }}>
+                          {count}
+                        </span>
+                        {isActive && <Check size={15} color={TOKEN.primary} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Usage Values — with product counts */}
+              {filterCategory === "usage" && (
+                <div style={{ padding: "8px 0" }}>
+                  {["", ...uniqueUsages].map((usage, i) => {
+                    const label = usage || "All Usages";
+                    const activeUsageFilter = (table.getColumn("productUsage")?.getFilterValue() as string) ?? "";
+                    const isActive = activeUsageFilter === usage;
+                    const count = usage
+                      ? data.filter((p) => {
+                          const u = p.productUsage;
+                          const arr: string[] = Array.isArray(u) ? u : u ? [u] : [];
+                          return arr.some((v) => v.toUpperCase() === usage.toUpperCase());
+                        }).length
+                      : data.length;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => {
+                          table.getColumn("productUsage")?.setFilterValue(usage);
+                          setFilterCategory(null);
+                        }}
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "14px 20px",
+                          background: isActive ? `${TOKEN.primary}08` : "none",
+                          border: "none",
+                          borderBottom: `1px solid ${TOKEN.border}`,
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <span style={{ fontSize: 13.5, fontWeight: isActive ? 700 : 500, color: isActive ? TOKEN.primary : TOKEN.textPri, flex: 1, textAlign: "left" }}>
+                          {label as string}
+                        </span>
+                        <span style={{
+                          fontSize: 11, fontWeight: 700,
+                          color: isActive ? TOKEN.primary : TOKEN.textSec,
+                          background: isActive ? `${TOKEN.primary}12` : TOKEN.bg,
+                          padding: "2px 8px", borderRadius: 6, marginRight: 8,
+                        }}>
+                          {count}
+                        </span>
+                        {isActive && <Check size={15} color={TOKEN.primary} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Drawer Footer */}
+            <div style={{
+              padding: "16px 20px",
+              paddingBottom: isMobile ? "calc(16px + var(--sab, 0px))" : 16,
+              borderTop: `1px solid ${TOKEN.border}`,
+            }}>
+              <button
+                onClick={() => { setFilterDrawerOpen(false); setFilterCategory(null); }}
+                style={{ ...primaryBtnStyle, width: "100%", justifyContent: "center" }}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Delete Dialogs */}
