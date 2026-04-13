@@ -59,6 +59,8 @@ import {
   DropdownMenuTrigger,
   DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
+import { useProductWorkflow } from "@/lib/useProductWorkflow";
+import { toast } from "sonner";
 
 // --- Logic Helpers ---
 const resolveItemCodes = (p: any) => p.itemCodes || {};
@@ -70,6 +72,10 @@ const getFilledItemCodes = (codes: any) =>
 export default function AllProductsPage() {
   const [data, setData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  // RBAC workflow
+  const { submitProductDelete, submitProductAssignWebsite, canVerifyProducts, canWriteProducts } =
+    useProductWorkflow();
 
   // Table states
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -88,6 +94,16 @@ export default function AllProductsPage() {
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [filterCategory, setFilterCategory] = useState<"family" | "class" | "usage" | null>(null);
 
+  // ── Swipe-to-delete state ──────────────────────────────────────────────────
+  const [swipingCardId, setSwipingCardId] = useState<string | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const swipeOffsetRef = useRef(0);
+  const swipeCardIdRef = useRef<string | null>(null);
+  const touchStartXRef = useRef(0);
+  const touchStartYRef = useRef(0);
+  const swipeDirectionRef = useRef<"h" | "v" | null>(null);
+  const SWIPE_DELETE_THRESHOLD = 90;
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 1024);
     handleResize();
@@ -95,7 +111,7 @@ export default function AllProductsPage() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // ─── FIREBASE FETCHING (REFERENCE COMPLIANT) ───────────────────────────────
+  // ─── FIREBASE FETCHING ─────────────────────────────────────────────────────
   useEffect(() => {
     let assignedData: any[] = [];
     let unassignedData: any[] = [];
@@ -105,7 +121,6 @@ export default function AllProductsPage() {
     const flush = () => {
       if (assignedReady && unassignedReady) {
         const merged = [...assignedData, ...unassignedData];
-        // Deduplicate
         const unique = Array.from(
           new Map(merged.map((item) => [item.id, item])).values(),
         );
@@ -242,7 +257,6 @@ export default function AllProductsPage() {
               >
                 {row.original.id.slice(0, 8).toUpperCase()}
               </p>
-              {/* Show item code labels stacked */}
               <div
                 style={{
                   display: "flex",
@@ -429,28 +443,57 @@ export default function AllProductsPage() {
   const activeFamilyFilter =
     (table.getColumn("productFamily")?.getFilterValue() as string) ?? "";
 
-  // Custom Filter Actions
-  const handleBulkDelete = () => setBulkDeleteOpen(true);
+  // ─── RBAC-wired delete handlers ───────────────────────────────────────────
 
   const handleExecuteDelete = async (product: any) => {
-    // mock delete
-    console.log("Deleted", product);
+    try {
+      const result = await submitProductDelete({
+        product,
+        originPage: "/products/all-products",
+        source: "all-products:delete",
+      });
+      if (result.mode === "direct") {
+        toast.success(result.message);
+      } else {
+        toast.success(result.message);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Delete failed.");
+    }
   };
 
   const handleExecuteBulkDelete = async () => {
-    console.log(
-      "Bulk Delete",
-      selectedRows.map((r) => r.original),
-    );
+    const products = selectedRows.map((r) => r.original);
+    let succeeded = 0;
+    let failed = 0;
+    for (const product of products) {
+      try {
+        await submitProductDelete({
+          product,
+          originPage: "/products/all-products",
+          source: "all-products:bulk-delete",
+        });
+        succeeded++;
+      } catch {
+        failed++;
+      }
+    }
     table.resetRowSelection();
+    if (failed === 0) {
+      toast.success(`${succeeded} product${succeeded !== 1 ? "s" : ""} deleted.`);
+    } else {
+      toast.error(`${succeeded} deleted, ${failed} failed.`);
+    }
   };
 
-  // MOBILE EVENT HANDLERS (LONG PRESS → enter bulk; single tap in bulk → toggle)
+  const handleBulkDelete = () => setBulkDeleteOpen(true);
+
+  // ─── Long-press for bulk select ───────────────────────────────────────────
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressActiveRef = useRef(false);
 
   const handleCardPressStart = useCallback((id: string) => {
-    if (isBulk) return; // already in bulk mode, long-press not needed
+    if (isBulk) return;
     longPressActiveRef.current = false;
     longPressTimerRef.current = setTimeout(() => {
       longPressActiveRef.current = true;
@@ -470,12 +513,10 @@ export default function AllProductsPage() {
   }, []);
 
   const handleCardTap = useCallback((id: string) => {
-    // Suppress click if this was a long press that already selected the item
     if (longPressActiveRef.current) {
       longPressActiveRef.current = false;
       return;
     }
-    // In bulk mode, single tap toggles selection
     if (isBulk) {
       const row = table.getFilteredRowModel().rows.find((r) => r.id === id);
       if (row) {
@@ -483,8 +524,77 @@ export default function AllProductsPage() {
         row.toggleSelected();
       }
     }
-    // else: normal tap → navigate / open product (no-op for now)
   }, [isBulk, table]);
+
+  // ─── Swipe-to-delete handlers ─────────────────────────────────────────────
+
+  const handleSwipeTouchStart = useCallback(
+    (e: React.TouchEvent, rowId: string) => {
+      if (isBulk) return;
+      touchStartXRef.current = e.touches[0].clientX;
+      touchStartYRef.current = e.touches[0].clientY;
+      swipeDirectionRef.current = null;
+      swipeCardIdRef.current = rowId;
+      swipeOffsetRef.current = 0;
+      setSwipingCardId(rowId);
+      setSwipeOffset(0);
+      // Start long press in parallel
+      handleCardPressStart(rowId);
+    },
+    [isBulk, handleCardPressStart],
+  );
+
+  const handleSwipeTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      if (!swipeCardIdRef.current) return;
+      const dx = e.touches[0].clientX - touchStartXRef.current;
+      const dy = e.touches[0].clientY - touchStartYRef.current;
+
+      // Determine direction once we have enough movement
+      if (
+        swipeDirectionRef.current === null &&
+        (Math.abs(dx) > 6 || Math.abs(dy) > 6)
+      ) {
+        swipeDirectionRef.current = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+      }
+
+      // Vertical scroll — let it pass through
+      if (swipeDirectionRef.current !== "h") return;
+
+      // Confirmed horizontal — cancel long-press timer so it doesn't fire
+      handleCardPressEnd();
+
+      // Only allow left swipe (negative dx)
+      if (dx < 0) {
+        const clamped = Math.max(dx, -150);
+        swipeOffsetRef.current = clamped;
+        setSwipeOffset(clamped);
+      }
+    },
+    [handleCardPressEnd],
+  );
+
+  const handleSwipeTouchEnd = useCallback(
+    (product: any) => {
+      handleCardPressEnd();
+
+      if (
+        swipeDirectionRef.current === "h" &&
+        swipeOffsetRef.current <= -SWIPE_DELETE_THRESHOLD
+      ) {
+        // Trigger delete dialog
+        setDeleteTarget(product);
+      }
+
+      // Snap back
+      setSwipingCardId(null);
+      setSwipeOffset(0);
+      swipeOffsetRef.current = 0;
+      swipeCardIdRef.current = null;
+      swipeDirectionRef.current = null;
+    },
+    [handleCardPressEnd],
+  );
 
   if (isLoading) {
     return (
@@ -532,7 +642,7 @@ export default function AllProductsPage() {
         minHeight: "100%",
       }}
     >
-      {/* STICKY TOP CONTROLS (SEARCH, FILTERS, BULK ACTIONS) */}
+      {/* STICKY TOP CONTROLS */}
       <div
         style={{
           position: "sticky",
@@ -541,13 +651,10 @@ export default function AllProductsPage() {
           background: TOKEN.bg,
           paddingTop: 16,
           paddingBottom: 16,
-          // Extend full-width past the parent's horizontal padding so cards
-          // never "bleed" through the gaps on either edge
           marginLeft: isMobile ? -16 : -24,
           marginRight: isMobile ? -16 : -24,
           paddingLeft: isMobile ? 16 : 24,
           paddingRight: isMobile ? 16 : 24,
-          // Bottom shadow that matches the background colour — acts as a mask
           boxShadow: `0 8px 0 0 ${TOKEN.bg}, 0 9px 0 0 ${TOKEN.border}22`,
         }}
       >
@@ -623,7 +730,7 @@ export default function AllProductsPage() {
           </div>
         )}
 
-        {/* MOBILE BULK ACTIONS (Improves layout, uses dropdown menu) */}
+        {/* MOBILE BULK ACTIONS */}
         {isMobile && isBulk && (
           <div
             style={{
@@ -710,45 +817,12 @@ export default function AllProductsPage() {
                       <MoreHorizontal size={20} />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    className="w-48"
-                    style={{
-                      background: TOKEN.surface,
-                      border: `1px solid ${TOKEN.border}`,
-                      borderRadius: 12,
-                      padding: "6px",
-                      boxShadow: "0 10px 25px rgba(0,0,0,0.1)",
-                      zIndex: 100,
-                    }}
-                  >
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem>Assign Website</DropdownMenuItem>
+                    <DropdownMenuItem>Generate TDS</DropdownMenuItem>
+                    <DropdownMenuSeparator />
                     <DropdownMenuItem
-                      style={{
-                        fontWeight: 600,
-                        color: TOKEN.textPri,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Assign Website
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      style={{
-                        fontWeight: 600,
-                        color: TOKEN.textPri,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Generate TDS
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator
-                      style={{ background: TOKEN.border, margin: "4px 0" }}
-                    />
-                    <DropdownMenuItem
-                      style={{
-                        fontWeight: 700,
-                        color: TOKEN.danger,
-                        cursor: "pointer",
-                      }}
+                      style={{ fontWeight: 700, color: TOKEN.danger }}
                       onClick={handleBulkDelete}
                     >
                       Delete Selected
@@ -760,7 +834,7 @@ export default function AllProductsPage() {
           </div>
         )}
 
-        {/* SEARCH AND FILTERS (Hidden when bulk selected for clean UI) */}
+        {/* SEARCH AND FILTERS */}
         {!isBulk && (
           <div
             style={{
@@ -820,11 +894,7 @@ export default function AllProductsPage() {
                 onClick={() => setFilterDrawerOpen(true)}
               >
                 <ListFilter size={16} />
-                {!isMobile && (
-                  <>
-                    Filter
-                  </>
-                )}
+                {!isMobile && <>Filter</>}
                 {(activeFamilyFilter || columnFilters.some(f => f.id === "productClass" || f.id === "productUsage")) && (
                   <span
                     style={{
@@ -956,7 +1026,7 @@ export default function AllProductsPage() {
             </tbody>
           </table>
         </div>
-        {/* Pagination Controls inside Table Container */}
+        {/* Pagination Controls */}
         <div
           style={{
             display: "flex",
@@ -1011,7 +1081,7 @@ export default function AllProductsPage() {
         </div>
       </div>
 
-      {/* MOBILE SCROLLABLE CONTENT (CARDS) - REMOVED PAGINATION LOGIC ON MOBILE */}
+      {/* ─── MOBILE CARDS with swipe-to-delete ─────────────────────────────── */}
       <div
         className="mobile-view"
         style={{
@@ -1026,159 +1096,223 @@ export default function AllProductsPage() {
           const product = row.original;
           const isSelected = row.getIsSelected();
           const codes = getFilledItemCodes(resolveItemCodes(product));
+          const isThisSwiping = swipingCardId === row.id;
+          const currentOffset = isThisSwiping ? swipeOffset : 0;
+          // How far the delete zone is revealed (positive = visible width)
+          const deleteZoneWidth = Math.max(-currentOffset, 0);
+          const showDeleteIcon = deleteZoneWidth > 40;
+          const pastThreshold = deleteZoneWidth >= SWIPE_DELETE_THRESHOLD;
 
           return (
+            // Outer wrapper: clips the sliding card so the delete zone
+            // appears from behind on the right edge
             <div
               key={row.id}
               style={{
-                ...mobileCardStyle,
-                border: isSelected
-                  ? `2px solid ${TOKEN.primary}`
-                  : `1px solid ${TOKEN.border}`,
-                background: isSelected ? `${TOKEN.primary}08` : TOKEN.surface,
                 position: "relative",
-                // prevent text selection during long press
-                WebkitUserSelect: "none",
-                userSelect: "none",
+                overflow: "hidden",
+                borderRadius: 16,
+                // Reserve height so nothing jumps when the card slides
+                flexShrink: 0,
               }}
-              onPointerDown={() => handleCardPressStart(row.id)}
-              onPointerUp={handleCardPressEnd}
-              onPointerLeave={handleCardPressEnd}
-              onPointerCancel={handleCardPressEnd}
-              onClick={() => handleCardTap(row.id)}
             >
-              <div style={{ display: "flex", gap: 16 }}>
-                {/* Img Left */}
-                <div style={mobileImgStyle}>
-                  {product.mainImage || product.imageUrl ? (
-                    <img
-                      src={product.mainImage || product.imageUrl}
-                      style={imgStyle}
-                      alt=""
-                    />
-                  ) : (
-                    <Package size={24} color={TOKEN.textSec} />
-                  )}
-                </div>
-                {/* Mid Info */}
-                <div
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <div>
-                    <h4
-                      style={{
-                        margin: 0,
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: TOKEN.textPri,
-                        lineHeight: 1.3,
-                        display: "-webkit-box",
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: "vertical",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {product.name || product.itemDescription || "Untitled"}
-                    </h4>
-                    {codes.length > 0 && (
-                      <div
-                        style={{
-                          display: "flex",
-                          flexWrap: "wrap",
-                          gap: 4,
-                          marginTop: 6,
-                        }}
-                      >
-                        {codes.slice(0, 3).map((cObj: any, i: number) => (
-                          <span
-                            key={i}
-                            style={{
-                              fontSize: 9,
-                              fontWeight: 800,
-                              padding: "2px 6px",
-                              background: `${TOKEN.primary}15`,
-                              color: TOKEN.primary,
-                              borderRadius: 4,
-                              fontFamily: "monospace",
-                            }}
-                          >
-                            {cObj.code}
-                          </span>
-                        ))}
-                      </div>
+              {/* ── Delete zone (red strip behind the card) ── */}
+              <div
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: deleteZoneWidth,
+                  background: pastThreshold
+                    ? "#b91c1c"   // darker red once threshold passed
+                    : TOKEN.danger,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  transition: isThisSwiping ? "none" : "width 0.3s ease, background 0.15s",
+                  borderRadius: "0 16px 16px 0",
+                }}
+              >
+                {showDeleteIcon && (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                    <Trash2 size={22} color="#fff" style={{ opacity: pastThreshold ? 1 : 0.85 }} />
+                    {pastThreshold && (
+                      <span style={{ fontSize: 9, fontWeight: 800, color: "#fff", letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                        Release
+                      </span>
                     )}
                   </div>
-                  <p
+                )}
+              </div>
+
+              {/* ── Card content (slides left on swipe) ── */}
+              <div
+                style={{
+                  ...mobileCardStyle,
+                  border: isSelected
+                    ? `2px solid ${TOKEN.primary}`
+                    : `1px solid ${TOKEN.border}`,
+                  background: isSelected ? `${TOKEN.primary}08` : TOKEN.surface,
+                  position: "relative",
+                  WebkitUserSelect: "none",
+                  userSelect: "none",
+                  // Slide transform — clamped at 150px so it doesn't go too far
+                  transform: `translateX(${Math.max(currentOffset, -150)}px)`,
+                  transition: isThisSwiping ? "none" : "transform 0.3s cubic-bezier(0.4,0,0.2,1)",
+                  borderRadius: 16,
+                  // Remove left border radius when delete zone is fully revealed
+                  borderTopRightRadius: deleteZoneWidth > 8 ? 0 : 16,
+                  borderBottomRightRadius: deleteZoneWidth > 8 ? 0 : 16,
+                }}
+                onTouchStart={(e) => handleSwipeTouchStart(e, row.id)}
+                onTouchMove={handleSwipeTouchMove}
+                onTouchEnd={() => handleSwipeTouchEnd(product)}
+                onTouchCancel={() => {
+                  setSwipingCardId(null);
+                  setSwipeOffset(0);
+                  swipeOffsetRef.current = 0;
+                  swipeCardIdRef.current = null;
+                  swipeDirectionRef.current = null;
+                  handleCardPressEnd();
+                }}
+                onClick={() => handleCardTap(row.id)}
+              >
+                <div style={{ display: "flex", gap: 16 }}>
+                  {/* Image */}
+                  <div style={mobileImgStyle}>
+                    {product.mainImage || product.imageUrl ? (
+                      <img
+                        src={product.mainImage || product.imageUrl}
+                        style={imgStyle}
+                        alt=""
+                      />
+                    ) : (
+                      <Package size={24} color={TOKEN.textSec} />
+                    )}
+                  </div>
+
+                  {/* Info */}
+                  <div
                     style={{
-                      margin: "6px 0 0",
-                      fontSize: 10,
-                      color: TOKEN.textSec,
-                      fontWeight: 600,
-                      textTransform: "uppercase",
+                      flex: 1,
+                      minWidth: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
                     }}
                   >
-                    {product.productFamily || "Standard"}
-                  </p>
-                </div>
-                {/* Right Info */}
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "flex-end",
-                    justifyContent: "flex-start",
-                    gap: 6,
-                    minWidth: 60,
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 9,
-                      fontWeight: 700,
-                      color: TOKEN.textPri,
-                      background: `${TOKEN.border}`,
-                      padding: "4px 8px",
-                      borderRadius: 4,
-                      textTransform: "capitalize",
-                    }}
-                  >
-                    {product.productClass || "Standard"}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 9,
-                      fontWeight: 700,
-                      color: TOKEN.textSec,
-                      background: TOKEN.bg,
-                      padding: "4px 8px",
-                      borderRadius: 4,
-                      textTransform: "capitalize",
-                    }}
-                  >
-                    {product.productUsage || "Indoor"}
-                  </span>
-                  {product.tdsFileUrl && (
-                    <button
+                    <div>
+                      <h4
+                        style={{
+                          margin: 0,
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: TOKEN.textPri,
+                          lineHeight: 1.3,
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {product.name || product.itemDescription || "Untitled"}
+                      </h4>
+                      {codes.length > 0 && (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 4,
+                            marginTop: 6,
+                          }}
+                        >
+                          {codes.slice(0, 3).map((cObj: any, i: number) => (
+                            <span
+                              key={i}
+                              style={{
+                                fontSize: 9,
+                                fontWeight: 800,
+                                padding: "2px 6px",
+                                background: `${TOKEN.primary}15`,
+                                color: TOKEN.primary,
+                                borderRadius: 4,
+                                fontFamily: "monospace",
+                              }}
+                            >
+                              {cObj.code}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <p
                       style={{
-                        fontSize: 9,
-                        fontWeight: 800,
-                        color: TOKEN.danger,
-                        background: `${TOKEN.dangerBg}`,
-                        padding: "6px 8px",
-                        borderRadius: 6,
-                        marginTop: "auto",
-                        border: "none",
+                        margin: "6px 0 0",
+                        fontSize: 10,
+                        color: TOKEN.textSec,
+                        fontWeight: 600,
+                        textTransform: "uppercase",
                       }}
                     >
-                      VIEW TDS
-                    </button>
-                  )}
+                      {product.productFamily || "Standard"}
+                    </p>
+                  </div>
+
+                  {/* Right meta */}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-end",
+                      justifyContent: "flex-start",
+                      gap: 6,
+                      minWidth: 60,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 9,
+                        fontWeight: 700,
+                        color: TOKEN.textPri,
+                        background: TOKEN.border,
+                        padding: "4px 8px",
+                        borderRadius: 4,
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {product.productClass || "Standard"}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 9,
+                        fontWeight: 700,
+                        color: TOKEN.textSec,
+                        background: TOKEN.bg,
+                        padding: "4px 8px",
+                        borderRadius: 4,
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {product.productUsage || "Indoor"}
+                    </span>
+                    {product.tdsFileUrl && (
+                      <button
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 800,
+                          color: TOKEN.danger,
+                          background: TOKEN.dangerBg,
+                          padding: "6px 8px",
+                          borderRadius: 6,
+                          marginTop: "auto",
+                          border: "none",
+                        }}
+                      >
+                        VIEW TDS
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1196,7 +1330,9 @@ export default function AllProductsPage() {
         />
       )}
 
-      {/* FILTER DRAWER */}
+      {/* ── FILTER DRAWER
+            z-index 300 so it covers the bottom nav (110) and the FAB (110)
+      ─── */}
       {filterDrawerOpen && (
         <>
           {/* Backdrop */}
@@ -1205,24 +1341,25 @@ export default function AllProductsPage() {
               position: "fixed",
               inset: 0,
               background: "rgba(0,0,0,0.45)",
-              zIndex: 100,
+              zIndex: 300,
               backdropFilter: "blur(3px)",
               WebkitBackdropFilter: "blur(3px)",
             }}
             onClick={() => { setFilterDrawerOpen(false); setFilterCategory(null); }}
           />
-          {/* Panel — bottom-sheet on mobile, right-panel on desktop */}
+
+          {/* Panel */}
           <div
             style={isMobile ? {
               position: "fixed",
               bottom: 0,
               left: 0,
               right: 0,
-              maxHeight: "75vh",
+              maxHeight: "80vh",
               background: TOKEN.surface,
               borderTop: `1px solid ${TOKEN.border}`,
               borderRadius: "24px 24px 0 0",
-              zIndex: 101,
+              zIndex: 301,
               display: "flex",
               flexDirection: "column",
               boxShadow: "0 -8px 32px rgba(0,0,0,0.18)",
@@ -1234,7 +1371,7 @@ export default function AllProductsPage() {
               width: 340,
               background: TOKEN.surface,
               borderLeft: `1px solid ${TOKEN.border}`,
-              zIndex: 101,
+              zIndex: 301,
               display: "flex",
               flexDirection: "column",
               boxShadow: "-8px 0 32px rgba(0,0,0,0.12)",
@@ -1246,6 +1383,7 @@ export default function AllProductsPage() {
                 <div style={{ width: 36, height: 4, borderRadius: 2, background: TOKEN.border }} />
               </div>
             )}
+
             {/* Drawer Header */}
             <div
               style={{
@@ -1274,7 +1412,10 @@ export default function AllProductsPage() {
                   </button>
                 )}
                 <span style={{ fontSize: 15, fontWeight: 800, color: TOKEN.textPri }}>
-                  {filterCategory === "family" ? "Product Family" : filterCategory === "class" ? "Product Class" : filterCategory === "usage" ? "Product Usage" : "Filters"}
+                  {filterCategory === "family" ? "Product Family"
+                    : filterCategory === "class" ? "Product Class"
+                    : filterCategory === "usage" ? "Product Usage"
+                    : "Filters"}
                 </span>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -1317,7 +1458,7 @@ export default function AllProductsPage() {
 
             {/* Drawer Body */}
             <div style={{ flex: 1, overflowY: "auto" }}>
-              {/* Category List (root level) */}
+              {/* Root category list */}
               {!filterCategory && (
                 <div style={{ padding: "12px 0" }}>
                   {[
@@ -1376,7 +1517,7 @@ export default function AllProductsPage() {
                 </div>
               )}
 
-              {/* Family Values — with product counts from Firestore data */}
+              {/* Family values */}
               {filterCategory === "family" && (
                 <div style={{ padding: "8px 0" }}>
                   {["", ...uniqueFamilies].map((fam, i) => {
@@ -1423,7 +1564,7 @@ export default function AllProductsPage() {
                 </div>
               )}
 
-              {/* Class Values — with product counts */}
+              {/* Class values */}
               {filterCategory === "class" && (
                 <div style={{ padding: "8px 0" }}>
                   {["", ...uniqueClasses].map((cls, i) => {
@@ -1471,7 +1612,7 @@ export default function AllProductsPage() {
                 </div>
               )}
 
-              {/* Usage Values — with product counts */}
+              {/* Usage values */}
               {filterCategory === "usage" && (
                 <div style={{ padding: "8px 0" }}>
                   {["", ...uniqueUsages].map((usage, i) => {
@@ -1527,7 +1668,8 @@ export default function AllProductsPage() {
             {/* Drawer Footer */}
             <div style={{
               padding: "16px 20px",
-              paddingBottom: isMobile ? "calc(16px + var(--sab, 0px))" : 16,
+              // Ensure footer sits above iOS home indicator
+              paddingBottom: isMobile ? "calc(16px + env(safe-area-inset-bottom, 0px))" : 16,
               borderTop: `1px solid ${TOKEN.border}`,
             }}>
               <button
@@ -1541,12 +1683,14 @@ export default function AllProductsPage() {
         </>
       )}
 
-      {/* Delete Dialogs */}
+      {/* ── Delete dialogs ─────────────────────────────────────────────────── */}
       <DeleteToRecycleBinDialog
         open={!!deleteTarget}
         onOpenChange={(v) => !v && setDeleteTarget(null)}
         itemName={deleteTarget?.itemDescription || deleteTarget?.name || ""}
         onConfirm={() => handleExecuteDelete(deleteTarget)}
+        // Writers without verify go through request flow
+        requestMode={!canVerifyProducts()}
       />
 
       <DeleteToRecycleBinDialog
@@ -1555,6 +1699,7 @@ export default function AllProductsPage() {
         itemName={`${selectedRows.length} products`}
         count={selectedRows.length}
         onConfirm={handleExecuteBulkDelete}
+        requestMode={!canVerifyProducts()}
       />
 
       {/* CSS View Toggle */}
