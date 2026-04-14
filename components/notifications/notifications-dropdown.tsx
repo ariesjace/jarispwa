@@ -475,7 +475,7 @@ export function NotificationsDropdown() {
               style={{
                 position: "absolute",
                 top: "calc(100% + 10px)",
-                right: -25,
+                right: -45,
                 left: "auto",
                 width: 360,
                 background: TOKEN.surface,
