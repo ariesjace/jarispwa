@@ -338,6 +338,17 @@ export function NotificationsDropdown() {
   );
   const ref = useRef<HTMLDivElement>(null);
 
+  // Mobile detection state
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Resize listener
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const visible = canSeeNotifications(user);
   const isVerifier = hasAccess(user, "verify", "products");
   const isSubmitter = !isVerifier && hasAccess(user, "write", "products");
@@ -475,7 +486,7 @@ export function NotificationsDropdown() {
               style={{
                 position: "absolute",
                 top: "calc(100% + 10px)",
-                right: -45,
+                right: isMobile ? -45 : 1,
                 left: "auto",
                 width: 360,
                 background: TOKEN.surface,
