@@ -3,6 +3,8 @@
 import React from "react";
 import { RouteProtection } from "@/components/route-protection";
 import { CMSLayout, TOKEN } from "@/components/layout";
+import RecycleBinPage from "@/components/pages/admin/RecycleBin";
+import AuditLogs from "@/components/pages/admin/AuditLogs";
 import { Shield, Trash2, Users, ScrollText } from "lucide-react";
 import { useAuth } from "@/lib/useAuth";
 
@@ -40,21 +42,9 @@ function AdminSection({ tab }: { tab: string }) {
 
   switch (tab) {
     case "Recycle Bin":
-      return (
-        <EmptyState
-          icon={Trash2}
-          label="Recycle Bin"
-          description="Restore or permanently delete removed items."
-        />
-      );
+      return <RecycleBinPage />;
     case "Audit Logs":
-      return (
-        <EmptyState
-          icon={ScrollText}
-          label="Audit Logs"
-          description="View a full history of system actions."
-        />
-      );
+      return <AuditLogs />;
     case "User Management":
       return (
         <EmptyState
