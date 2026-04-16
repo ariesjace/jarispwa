@@ -76,6 +76,7 @@ import { useAuth } from "@/lib/useAuth";
 import { logAuditEvent } from "@/lib/logger";
 import { getScopeAccessForRole, getAccessLevelForRole } from "@/lib/rbac";
 import { TOKEN, SPRING_MED } from "@/components/layout/tokens";
+import { usePageFAB } from "@/components/layout/FABContext";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -430,7 +431,6 @@ function ScopeAccessPanel({
           </span>
         )}
       </div>
-
       {error && (
         <p
           style={{
@@ -443,7 +443,6 @@ function ScopeAccessPanel({
           {error}
         </p>
       )}
-
       {SCOPE_SECTIONS.map((section) => (
         <div
           key={section.resource}
@@ -489,6 +488,7 @@ function ScopeAccessPanel({
                         ? `1px solid ${TOKEN.border}`
                         : "none",
                     background: isOn ? `${TOKEN.primary}04` : "transparent",
+                    transition: "background 0.15s",
                   }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -527,7 +527,7 @@ function ScopeAccessPanel({
   );
 }
 
-// ─── Role Badge (inline styled) ───────────────────────────────────────────────
+// ─── Role Badge ───────────────────────────────────────────────────────────────
 
 function RoleBadge({ role }: { role: string }) {
   const cfg = getRoleConfig(role);
@@ -607,10 +607,12 @@ const AVATAR_COLORS = [
   ["#dc2626", "#b91c1c"],
   ["#0891b2", "#0e7490"],
 ];
+
 function getAvatarGradient(str: string): string[] {
   const hash = str.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
   return AVATAR_COLORS[hash % AVATAR_COLORS.length];
 }
+
 function UserAvatar({ name, size = 36 }: { name: string; size?: number }) {
   const initials = (name || "?")
     .split(" ")
@@ -639,6 +641,30 @@ function UserAvatar({ name, size = 36 }: { name: string; size?: number }) {
     </div>
   );
 }
+
+// ─── Shared field styles ──────────────────────────────────────────────────────
+
+const fieldLabel: React.CSSProperties = {
+  display: "block",
+  fontSize: 11,
+  fontWeight: 700,
+  textTransform: "uppercase",
+  color: TOKEN.textSec,
+  marginBottom: 7,
+};
+
+const fieldInput: React.CSSProperties = {
+  width: "100%",
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: `1px solid ${TOKEN.border}`,
+  background: TOKEN.surface,
+  fontSize: 13.5,
+  color: TOKEN.textPri,
+  outline: "none",
+  boxSizing: "border-box" as const,
+  fontFamily: "inherit",
+};
 
 // ─── Register / Edit Modal ────────────────────────────────────────────────────
 
@@ -703,9 +729,8 @@ function UserFormModal({
       if (
         roleDropRef.current &&
         !roleDropRef.current.contains(e.target as Node)
-      ) {
+      )
         setRoleDropOpen(false);
-      }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -761,7 +786,6 @@ function UserFormModal({
       return;
     }
 
-    // Register
     if (!email || !password)
       return toast.error("Email and password are required.");
     if (password !== confirmPassword)
@@ -779,7 +803,6 @@ function UserFormModal({
       );
       const newUser = cred.user;
       await updateProfile(newUser, { displayName: fullName });
-
       const ref = doc(db, "adminaccount", newUser.uid);
       const snap = await getDoc(ref);
       if (snap.exists()) {
@@ -787,7 +810,6 @@ function UserFormModal({
         toast.error("Account already exists.", { id: t });
         return;
       }
-
       await setDoc(ref, {
         uid: newUser.uid,
         email,
@@ -945,7 +967,7 @@ function UserFormModal({
                 </button>
               </div>
 
-              {/* Scrollable body */}
+              {/* Body */}
               <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
                 <form
                   id="user-form"
@@ -1087,7 +1109,7 @@ function UserFormModal({
                     </div>
                   </div>
 
-                  {/* Scope Access Switches */}
+                  {/* Scope Access */}
                   {role && (
                     <ScopeAccessPanel
                       value={scopeAccess}
@@ -1118,7 +1140,7 @@ function UserFormModal({
                     </div>
                   )}
 
-                  {/* Password (register only) */}
+                  {/* Passwords (register only) */}
                   {!isEdit && (
                     <>
                       <div>
@@ -1468,7 +1490,6 @@ function DeleteUserModal({
                 padding: 28,
               }}
             >
-              {/* Close btn */}
               <div
                 style={{
                   display: "flex",
@@ -1674,29 +1695,6 @@ function DeleteUserModal({
   );
 }
 
-// ─── Shared field styles ──────────────────────────────────────────────────────
-
-const fieldLabel: React.CSSProperties = {
-  display: "block",
-  fontSize: 11,
-  fontWeight: 700,
-  textTransform: "uppercase",
-  color: TOKEN.textSec,
-  marginBottom: 7,
-};
-const fieldInput: React.CSSProperties = {
-  width: "100%",
-  padding: "10px 14px",
-  borderRadius: 10,
-  border: `1px solid ${TOKEN.border}`,
-  background: TOKEN.surface,
-  fontSize: 13.5,
-  color: TOKEN.textPri,
-  outline: "none",
-  boxSizing: "border-box" as const,
-  fontFamily: "inherit",
-};
-
 // ─── Inline table styles ───────────────────────────────────────────────────────
 
 const tableContainerStyle: React.CSSProperties = {
@@ -1744,38 +1742,19 @@ const iconBtnStyle: React.CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
 };
-
-// ─── FAB ──────────────────────────────────────────────────────────────────────
-
-function AddUserFAB({ onClick }: { onClick: () => void }) {
-  const { motion } = require("framer-motion"); // already imported
-  return (
-    // @ts-ignore
-    <motion.button
-      whileHover={{ scale: 1.05 }}
-      whileTap={{ scale: 0.95 }}
-      onClick={onClick}
-      style={{
-        position: "fixed",
-        bottom: 80,          // ← WAS 24, NOW 80
-        right: 20,
-        zIndex: 110,
-        width: 56,
-        height: 56,
-        borderRadius: "50%",
-        border: "none",
-        background: "#2563EB",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        cursor: "pointer",
-        boxShadow: `0 8px 24px -4px #2563EB60`,
-      }}
-    >
-      {/* UserPlus icon */}
-    </motion.button>
-  );
-}
+const actionBtnStyle: React.CSSProperties = {
+  padding: "8px 14px",
+  borderRadius: 8,
+  background: TOKEN.surface,
+  border: `1px solid ${TOKEN.border}`,
+  fontSize: 12,
+  fontWeight: 600,
+  cursor: "pointer",
+  color: TOKEN.textPri,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+};
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
@@ -1873,14 +1852,32 @@ export default function UserManagement() {
     }
   };
 
-  const openAdd = () => {
+  const openAdd = useCallback(() => {
     setEditTarget(null);
     setFormOpen(true);
-  };
+  }, []);
+
   const openEdit = (u: AdminUser) => {
     setEditTarget(u);
     setFormOpen(true);
   };
+
+  // ── Mobile FAB (superadmin only) ────────────────────────────────────────────
+  const fabActions = useMemo(
+    () =>
+      isSuperAdmin
+        ? [
+            {
+              label: "Add User",
+              Icon: UserPlus,
+              color: TOKEN.primary,
+              onClick: openAdd,
+            },
+          ]
+        : [],
+    [isSuperAdmin, openAdd],
+  );
+  usePageFAB(fabActions);
 
   // ── Columns ─────────────────────────────────────────────────────────────────
   const columns = useMemo<ColumnDef<AdminUser>[]>(
@@ -1976,24 +1973,21 @@ export default function UserManagement() {
       {
         accessorKey: "provider",
         header: "Auth",
-        cell: ({ row }) => {
-          const p = row.original.provider;
-          return (
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                padding: "2px 7px",
-                borderRadius: 4,
-                background: TOKEN.bg,
-                border: `1px solid ${TOKEN.border}`,
-                color: TOKEN.textSec,
-              }}
-            >
-              {p === "google" ? "Google" : "Password"}
-            </span>
-          );
-        },
+        cell: ({ row }) => (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              padding: "2px 7px",
+              borderRadius: 4,
+              background: TOKEN.bg,
+              border: `1px solid ${TOKEN.border}`,
+              color: TOKEN.textSec,
+            }}
+          >
+            {row.original.provider === "google" ? "Google" : "Password"}
+          </span>
+        ),
       },
       {
         accessorFn: (u) => (u.createdAt ? new Date(u.createdAt).getTime() : 0),
@@ -2075,17 +2069,7 @@ export default function UserManagement() {
 
   const selectedRows = table.getFilteredSelectedRowModel().rows;
   const isBulk = selectedRows.length > 0;
-  const activeRoleFilter =
-    (table.getColumn("role")?.getFilterValue() as string) ?? "";
-  const activeStatusFilter =
-    (table.getColumn("status")?.getFilterValue() as string) ?? "";
-  const hasFilters = !!(globalFilter || activeRoleFilter || activeStatusFilter);
-
-  const roleCounts = useMemo(() => {
-    const m = new Map<string, number>();
-    data.forEach((u) => m.set(u.role, (m.get(u.role) ?? 0) + 1));
-    return m;
-  }, [data]);
+  const hasFilters = !!globalFilter;
 
   if (loading)
     return (
@@ -2177,6 +2161,8 @@ export default function UserManagement() {
               {table.getFilteredRowModel().rows.length}
             </span>
           </div>
+
+          {/* Desktop "Add User" button — only superadmin, hidden on mobile (FAB handles it) */}
           {!isMobile && isSuperAdmin && (
             <button
               onClick={openAdd}
@@ -2192,14 +2178,22 @@ export default function UserManagement() {
                 fontSize: 13.5,
                 fontWeight: 600,
                 cursor: "pointer",
+                boxShadow: `0 4px 14px -2px ${TOKEN.primary}50`,
+                transition: "opacity 0.15s",
               }}
+              onMouseEnter={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.opacity = "0.88")
+              }
+              onMouseLeave={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.opacity = "1")
+              }
             >
               <UserPlus size={15} /> Add User
             </button>
           )}
         </div>
 
-        {/* Bulk banner — desktop */}
+        {/* Desktop bulk banner */}
         {!isMobile && isBulk && (
           <div
             style={{
@@ -2220,7 +2214,7 @@ export default function UserManagement() {
             </span>
             <div style={{ display: "flex", gap: 8 }}>
               <button
-                style={{ ...actionBtnStyle }}
+                style={actionBtnStyle}
                 onClick={() => table.resetRowSelection()}
               >
                 Cancel
@@ -2289,7 +2283,7 @@ export default function UserManagement() {
           </div>
         )}
 
-        {/* Search + filters */}
+        {/* Search */}
         {!isBulk && (
           <div
             style={{
@@ -2361,8 +2355,6 @@ export default function UserManagement() {
                 onClick={() => {
                   setSearchInput("");
                   startTransition(() => setGlobalFilter(""));
-                  table.getColumn("role")?.setFilterValue("");
-                  table.getColumn("status")?.setFilterValue("");
                 }}
                 style={{
                   display: "flex",
@@ -2574,7 +2566,11 @@ export default function UserManagement() {
                 onClick={() => (isBulk ? row.toggleSelected() : openEdit(u))}
                 onTouchStart={(e) => {
                   const timer = setTimeout(() => row.toggleSelected(true), 500);
-                  e.currentTarget.addEventListener("touchend", () => clearTimeout(timer), { once: true });
+                  e.currentTarget.addEventListener(
+                    "touchend",
+                    () => clearTimeout(timer),
+                    { once: true },
+                  );
                 }}
               >
                 {isSelected && (
@@ -2716,9 +2712,6 @@ export default function UserManagement() {
           })
         )}
       </div>
-
-      {/* ── Mobile FAB ── */}
-      {isMobile && isSuperAdmin && !isBulk && <AddUserFAB onClick={openAdd} />}
 
       {/* ── Bulk delete confirm ── */}
       <AnimatePresence>
@@ -2926,17 +2919,3 @@ export default function UserManagement() {
     </div>
   );
 }
-
-const actionBtnStyle: React.CSSProperties = {
-  padding: "8px 14px",
-  borderRadius: 8,
-  background: TOKEN.surface,
-  border: `1px solid ${TOKEN.border}`,
-  fontSize: 12,
-  fontWeight: 600,
-  cursor: "pointer",
-  color: TOKEN.textPri,
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-};

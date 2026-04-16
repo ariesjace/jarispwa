@@ -829,9 +829,13 @@ function ProductFamiliesContent() {
 
   // ── List state ─────────────────────────────────────────────────────────────
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState<"all" | "active" | "inactive">("all");
+  const [filterStatus, setFilterStatus] = useState<
+    "all" | "active" | "inactive"
+  >("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [deleteTarget, setDeleteTarget] = useState<ProductFamilyDoc | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ProductFamilyDoc | null>(
+    null,
+  );
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
@@ -846,18 +850,29 @@ function ProductFamiliesContent() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [openSpecGroups, setOpenSpecGroups] = useState(false);
-  const [selectedSpecGroupIds, setSelectedSpecGroupIds] = useState<string[]>([]);
-  const [specItemSelections, setSpecItemSelections] = useState<Record<string, string[]>>({});
-  const [specItemSearch, setSpecItemSearch] = useState<Record<string, string>>({});
+  const [selectedSpecGroupIds, setSelectedSpecGroupIds] = useState<string[]>(
+    [],
+  );
+  const [specItemSelections, setSpecItemSelections] = useState<
+    Record<string, string[]>
+  >({});
+  const [specItemSearch, setSpecItemSearch] = useState<Record<string, string>>(
+    {},
+  );
   const [openApplications, setOpenApplications] = useState(false);
-  const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
+  const [selectedApplicationIds, setSelectedApplicationIds] = useState<
+    string[]
+  >([]);
 
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   // ── Firestore ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const q = query(collection(db, "productfamilies"), orderBy("createdAt", "desc"));
+    const q = query(
+      collection(db, "productfamilies"),
+      orderBy("createdAt", "desc"),
+    );
     return onSnapshot(q, (snap) => {
       setFamilies(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
       setLoadingFamilies(false);
@@ -874,7 +889,9 @@ function ProductFamiliesContent() {
   useEffect(() => {
     const q = query(collection(db, "applications"), orderBy("title", "asc"));
     return onSnapshot(q, (snap) => {
-      setApplications(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
+      setApplications(
+        snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })),
+      );
     });
   }, []);
 
@@ -915,7 +932,10 @@ function ProductFamiliesContent() {
           .map((l) => l.toUpperCase().trim());
         const chosenItemIds = new Set(specItemSelections[specGroupId] ?? []);
         const chosenItems: SpecItemRef[] = labels
-          .map((label) => ({ id: buildSpecItemId(specGroupId, label), name: label }))
+          .map((label) => ({
+            id: buildSpecItemId(specGroupId, label),
+            name: label,
+          }))
           .filter((item) => chosenItemIds.has(item.id));
         return { specGroupId, specItems: chosenItems };
       })
@@ -966,7 +986,7 @@ function ProductFamiliesContent() {
     resetForm();
   }, [resetForm]);
 
-  /** FAB "Add New Family" — opens the form drawer */
+  /** FAB + desktop button handler — opens the form drawer */
   const handleFABAddNew = useCallback(() => {
     resetForm();
     setFormModalOpen(true);
@@ -1035,7 +1055,10 @@ function ProductFamiliesContent() {
       .filter(Boolean)
       .map((l) => l.toUpperCase().trim());
     const ids = labels.map((label) => buildSpecItemId(specGroupId, label));
-    setSpecItemSelections((prev) => ({ ...prev, [specGroupId]: on ? ids : [] }));
+    setSpecItemSelections((prev) => ({
+      ...prev,
+      [specGroupId]: on ? ids : [],
+    }));
   };
 
   const validate = (): { ok: boolean; message?: string } => {
@@ -1046,7 +1069,10 @@ function ProductFamiliesContent() {
       const chosen = specItemSelections[gid] ?? [];
       if (chosen.length === 0) {
         const name = specGroupById.get(gid)?.name ?? "Spec Group";
-        return { ok: false, message: `Select at least one spec item for "${name}"` };
+        return {
+          ok: false,
+          message: `Select at least one spec item for "${name}"`,
+        };
       }
     }
     return { ok: true };
@@ -1096,7 +1122,10 @@ function ProductFamiliesContent() {
       if (selectedApplicationIds.length > 0 && normalisedTitle) {
         try {
           const productsSnap = await getDocs(
-            query(collection(db, "products"), where("productFamily", "==", normalisedTitle)),
+            query(
+              collection(db, "products"),
+              where("productFamily", "==", normalisedTitle),
+            ),
           );
           if (!productsSnap.empty) {
             const batch = writeBatch(db);
@@ -1152,7 +1181,9 @@ function ProductFamiliesContent() {
         console.warn("TDS template generation failed:", tplErr);
       }
 
-      toast.success(editId ? "Product family updated" : "Product family created");
+      toast.success(
+        editId ? "Product family updated" : "Product family created",
+      );
       resetForm();
       setFormModalOpen(false);
     } catch {
@@ -1181,7 +1212,9 @@ function ProductFamiliesContent() {
     setIsBulkDeleting(true);
     try {
       await Promise.all(
-        Array.from(selectedIds).map((id) => deleteDoc(doc(db, "productfamilies", id))),
+        Array.from(selectedIds).map((id) =>
+          deleteDoc(doc(db, "productfamilies", id)),
+        ),
       );
       toast.success(`Deleted ${selectedIds.size} product families`);
       setSelectedIds(new Set());
@@ -1197,7 +1230,6 @@ function ProductFamiliesContent() {
 
   return (
     <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
-
       {/* ── Page header ── */}
       <div
         style={{
@@ -1209,15 +1241,58 @@ function ProductFamiliesContent() {
           gap: 16,
         }}
       >
-        <div>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: TOKEN.textPri }}>
+        <div style={{ flex: 1 }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: 24,
+              fontWeight: 800,
+              color: TOKEN.textPri,
+            }}
+          >
             Product Families
           </h1>
           <p style={{ margin: "4px 0 0", fontSize: 13, color: TOKEN.textSec }}>
-            Create and manage product families, specs, and application assignments.
-            A blank TDS template is auto-generated on each save.
+            Create and manage product families, specs, and application
+            assignments. A blank TDS template is auto-generated on each save.
           </p>
         </div>
+
+        {/* Desktop-only "New Family" button — hidden on mobile (FAB takes over) */}
+        <button
+          onClick={handleFABAddNew}
+          className="families-desktop-add-btn"
+          style={{
+            display: "none", // overridden to "flex" at ≥1024 px via CSS below
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 18px",
+            borderRadius: 12,
+            border: "none",
+            background: TOKEN.primary,
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 700,
+            cursor: "pointer",
+            flexShrink: 0,
+            boxShadow: `0 4px 14px -2px ${TOKEN.primary}50`,
+            whiteSpace: "nowrap",
+            transition: "opacity 0.15s, transform 0.15s",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.opacity = "0.88";
+            (e.currentTarget as HTMLButtonElement).style.transform =
+              "translateY(-1px)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.opacity = "1";
+            (e.currentTarget as HTMLButtonElement).style.transform =
+              "translateY(0)";
+          }}
+        >
+          <FolderPlus size={15} />
+          New Family
+        </button>
       </div>
 
       {/* ── Search + filters toolbar ── */}
@@ -1279,7 +1354,8 @@ function ProductFamiliesContent() {
                   padding: "7px 16px",
                   borderRadius: 8,
                   border: `1px solid ${filterStatus === s ? TOKEN.primary : TOKEN.border}`,
-                  background: filterStatus === s ? TOKEN.primary : TOKEN.surface,
+                  background:
+                    filterStatus === s ? TOKEN.primary : TOKEN.surface,
                   color: filterStatus === s ? "#fff" : TOKEN.textSec,
                   fontSize: 12,
                   fontWeight: 600,
@@ -1305,7 +1381,9 @@ function ProductFamiliesContent() {
           >
             <p style={{ margin: 0, fontSize: 12, color: TOKEN.textSec }}>
               Showing{" "}
-              <strong style={{ color: TOKEN.textPri }}>{filteredFamilies.length}</strong>{" "}
+              <strong style={{ color: TOKEN.textPri }}>
+                {filteredFamilies.length}
+              </strong>{" "}
               of {families.length} product families
             </p>
 
@@ -1322,7 +1400,10 @@ function ProductFamiliesContent() {
                 >
                   <Trash2 size={13} /> Delete {selectedIds.size}
                 </button>
-                <button onClick={() => setSelectedIds(new Set())} style={outlineBtn}>
+                <button
+                  onClick={() => setSelectedIds(new Set())}
+                  style={outlineBtn}
+                >
                   Deselect All
                 </button>
               </div>
@@ -1343,8 +1424,20 @@ function ProductFamiliesContent() {
             color: TOKEN.textSec,
           }}
         >
-          <Loader2 size={28} className="animate-spin" style={{ color: TOKEN.primary }} />
-          <p style={{ margin: 0, fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase" }}>
+          <Loader2
+            size={28}
+            className="animate-spin"
+            style={{ color: TOKEN.primary }}
+          />
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: "0.2em",
+              textTransform: "uppercase",
+            }}
+          >
             Loading…
           </p>
         </div>
@@ -1375,7 +1468,10 @@ function ProductFamiliesContent() {
               marginBottom: 16,
             }}
           >
-            <FolderPlus size={28} style={{ color: TOKEN.textSec, opacity: 0.3 }} />
+            <FolderPlus
+              size={28}
+              style={{ color: TOKEN.textSec, opacity: 0.3 }}
+            />
           </div>
           <h3
             style={{
@@ -1389,9 +1485,17 @@ function ProductFamiliesContent() {
           >
             {families.length === 0 ? "No Product Families" : "No Results"}
           </h3>
-          <p style={{ margin: 0, fontSize: 12, color: TOKEN.textSec, maxWidth: 280, lineHeight: 1.6 }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12,
+              color: TOKEN.textSec,
+              maxWidth: 280,
+              lineHeight: 1.6,
+            }}
+          >
             {families.length === 0
-              ? "Click \"New Family\" to create your first product family."
+              ? 'Click "New Family" to create your first product family.'
               : "No product families match your search or filter criteria."}
           </p>
           {families.length === 0 && (
@@ -1435,10 +1539,15 @@ function ProductFamiliesContent() {
                   setSelectedSpecGroupIds(f.specs.map((s) => s.specGroupId));
                   const nextSel: Record<string, string[]> = {};
                   for (const s of f.specs) {
-                    nextSel[s.specGroupId] = (s.specItems ?? []).map((it) => it.id);
+                    nextSel[s.specGroupId] = (s.specItems ?? []).map(
+                      (it) => it.id,
+                    );
                   }
                   setSpecItemSelections(nextSel);
-                } else if (Array.isArray(f.specifications) && f.specifications.length > 0) {
+                } else if (
+                  Array.isArray(f.specifications) &&
+                  f.specifications.length > 0
+                ) {
                   setSelectedSpecGroupIds(f.specifications);
                   setSpecItemSelections({});
                 } else {
@@ -1587,11 +1696,20 @@ function ProductFamiliesContent() {
                       placeholder="E.G. RECESSED LIGHTS"
                       style={{
                         ...inputStyle,
-                        borderColor: !title.trim() ? `${TOKEN.danger}60` : TOKEN.border,
+                        borderColor: !title.trim()
+                          ? `${TOKEN.danger}60`
+                          : TOKEN.border,
                       }}
                     />
                     {!title.trim() && (
-                      <p style={{ margin: "5px 0 0", fontSize: 10, color: TOKEN.danger, fontWeight: 700 }}>
+                      <p
+                        style={{
+                          margin: "5px 0 0",
+                          fontSize: 10,
+                          color: TOKEN.danger,
+                          fontWeight: 700,
+                        }}
+                      >
                         Title is required
                       </p>
                     )}
@@ -1600,7 +1718,8 @@ function ProductFamiliesContent() {
                   {/* Product Usage */}
                   <div>
                     <label style={labelStyle}>
-                      Product Usage <span style={{ opacity: 0.5 }}>(optional)</span>
+                      Product Usage{" "}
+                      <span style={{ opacity: 0.5 }}>(optional)</span>
                     </label>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       {PRODUCT_USAGE_OPTIONS.map((u) => (
@@ -1610,14 +1729,23 @@ function ProductFamiliesContent() {
                           active={productUsage.includes(u)}
                           onClick={() =>
                             setProductUsage((p) =>
-                              p.includes(u) ? p.filter((v) => v !== u) : [...p, u],
+                              p.includes(u)
+                                ? p.filter((v) => v !== u)
+                                : [...p, u],
                             )
                           }
                         />
                       ))}
                     </div>
                     {productUsage.length === 0 && (
-                      <p style={{ margin: "6px 0 0", fontSize: 10, color: TOKEN.textSec, fontWeight: 600 }}>
+                      <p
+                        style={{
+                          margin: "6px 0 0",
+                          fontSize: 10,
+                          color: TOKEN.textSec,
+                          fontWeight: 600,
+                        }}
+                      >
                         Tagging usage helps filter families in the product form
                       </p>
                     )}
@@ -1633,7 +1761,9 @@ function ProductFamiliesContent() {
                       style={{
                         border: `2px dashed ${isDragActive ? TOKEN.primary : TOKEN.border}`,
                         borderRadius: 10,
-                        background: isDragActive ? `${TOKEN.primary}08` : TOKEN.bg,
+                        background: isDragActive
+                          ? `${TOKEN.primary}08`
+                          : TOKEN.bg,
                         padding: previewUrl ? 0 : 24,
                         cursor: "pointer",
                         overflow: "hidden",
@@ -1685,11 +1815,32 @@ function ProductFamiliesContent() {
                         </div>
                       ) : (
                         <div style={{ textAlign: "center" }}>
-                          <ImageIcon size={20} style={{ color: TOKEN.textSec, opacity: 0.4, margin: "0 auto 8px" }} />
-                          <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: TOKEN.textSec }}>
+                          <ImageIcon
+                            size={20}
+                            style={{
+                              color: TOKEN.textSec,
+                              opacity: 0.4,
+                              margin: "0 auto 8px",
+                            }}
+                          />
+                          <p
+                            style={{
+                              margin: 0,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: TOKEN.textSec,
+                            }}
+                          >
                             Drop image here
                           </p>
-                          <p style={{ margin: "2px 0 0", fontSize: 10, color: TOKEN.textSec, opacity: 0.6 }}>
+                          <p
+                            style={{
+                              margin: "2px 0 0",
+                              fontSize: 10,
+                              color: TOKEN.textSec,
+                              opacity: 0.6,
+                            }}
+                          >
                             or click to browse
                           </p>
                         </div>
@@ -1699,9 +1850,17 @@ function ProductFamiliesContent() {
 
                   {/* Applications */}
                   <div>
-                    <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}>
+                    <label
+                      style={{
+                        ...labelStyle,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
                       <Briefcase size={10} />
-                      Applications <span style={{ opacity: 0.5 }}>(optional)</span>
+                      Applications{" "}
+                      <span style={{ opacity: 0.5 }}>(optional)</span>
                     </label>
                     <MultiSelectDropdown
                       items={applications}
@@ -1714,7 +1873,14 @@ function ProductFamiliesContent() {
                       onOpenChange={setOpenApplications}
                     />
                     {selectedApplicationIds.length > 0 && (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 6,
+                          marginTop: 8,
+                        }}
+                      >
                         {selectedApplicationIds.map((appId) => {
                           const app = applicationById.get(appId);
                           const name = app?.title ?? app?.name ?? appId;
@@ -1756,8 +1922,16 @@ function ProductFamiliesContent() {
                       </div>
                     )}
                     {selectedApplicationIds.length > 0 && (
-                      <p style={{ margin: "5px 0 0", fontSize: 10, color: TOKEN.textSec, fontWeight: 600 }}>
-                        Products in this family will be tagged with the selected applications
+                      <p
+                        style={{
+                          margin: "5px 0 0",
+                          fontSize: 10,
+                          color: TOKEN.textSec,
+                          fontWeight: 600,
+                        }}
+                      >
+                        Products in this family will be tagged with the selected
+                        applications
                       </p>
                     )}
                   </div>
@@ -1772,13 +1946,24 @@ function ProductFamiliesContent() {
                       selectedIds={selectedSpecGroupIds}
                       onToggle={canPickSpecs ? handleToggleSpecGroup : () => {}}
                       getLabel={(g) => g.name ?? ""}
-                      placeholder={canPickSpecs ? "Select spec groups…" : "Enter a title first"}
+                      placeholder={
+                        canPickSpecs
+                          ? "Select spec groups…"
+                          : "Enter a title first"
+                      }
                       icon={Layers}
                       open={openSpecGroups && canPickSpecs}
                       onOpenChange={(v) => canPickSpecs && setOpenSpecGroups(v)}
                     />
                     {!canPickSpecs && (
-                      <p style={{ margin: "5px 0 0", fontSize: 10, color: TOKEN.textSec, fontWeight: 600 }}>
+                      <p
+                        style={{
+                          margin: "5px 0 0",
+                          fontSize: 10,
+                          color: TOKEN.textSec,
+                          fontWeight: 600,
+                        }}
+                      >
                         Spec selection unlocks after title is set
                       </p>
                     )}
@@ -1786,7 +1971,13 @@ function ProductFamiliesContent() {
 
                   {/* Spec items per group */}
                   {selectedSpecGroupIds.length > 0 && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 12,
+                      }}
+                    >
                       <div
                         style={{
                           display: "flex",
@@ -1795,7 +1986,8 @@ function ProductFamiliesContent() {
                         }}
                       >
                         <label style={{ ...labelStyle, marginBottom: 0 }}>
-                          Spec Items <span style={{ color: TOKEN.danger }}>*</span>
+                          Spec Items{" "}
+                          <span style={{ color: TOKEN.danger }}>*</span>
                         </label>
                         <span
                           style={{
@@ -1808,7 +2000,11 @@ function ProductFamiliesContent() {
                             padding: "2px 8px",
                           }}
                         >
-                          {selectedSummary.reduce((sum, g) => sum + g.specItems.length, 0)} selected
+                          {selectedSummary.reduce(
+                            (sum, g) => sum + g.specItems.length,
+                            0,
+                          )}{" "}
+                          selected
                         </span>
                       </div>
 
@@ -1823,14 +2019,24 @@ function ProductFamiliesContent() {
                               .map((l) => l.toUpperCase().trim()),
                           ),
                         );
-                        const search = (specItemSearch[gid] ?? "").toUpperCase();
-                        const filtered = search ? labels.filter((l) => l.includes(search)) : labels;
-                        const selectedSet = new Set(specItemSelections[gid] ?? []);
+                        const search = (
+                          specItemSearch[gid] ?? ""
+                        ).toUpperCase();
+                        const filtered = search
+                          ? labels.filter((l) => l.includes(search))
+                          : labels;
+                        const selectedSet = new Set(
+                          specItemSelections[gid] ?? [],
+                        );
 
                         return (
                           <div
                             key={gid}
-                            style={{ border: `1px solid ${TOKEN.border}`, borderRadius: 10, overflow: "hidden" }}
+                            style={{
+                              border: `1px solid ${TOKEN.border}`,
+                              borderRadius: 10,
+                              overflow: "hidden",
+                            }}
                           >
                             <div
                               style={{
@@ -1844,18 +2050,44 @@ function ProductFamiliesContent() {
                               }}
                             >
                               <div style={{ minWidth: 0 }}>
-                                <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: TOKEN.textPri, textTransform: "uppercase" }}>
+                                <p
+                                  style={{
+                                    margin: 0,
+                                    fontSize: 12,
+                                    fontWeight: 800,
+                                    color: TOKEN.textPri,
+                                    textTransform: "uppercase",
+                                  }}
+                                >
                                   {groupName}
                                 </p>
-                                <p style={{ margin: "2px 0 0", fontSize: 10, color: TOKEN.textSec, fontWeight: 600 }}>
-                                  {selectedSet.size} SELECTED · {labels.length} AVAILABLE
+                                <p
+                                  style={{
+                                    margin: "2px 0 0",
+                                    fontSize: 10,
+                                    color: TOKEN.textSec,
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  {selectedSet.size} SELECTED · {labels.length}{" "}
+                                  AVAILABLE
                                 </p>
                               </div>
-                              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: 6,
+                                  flexShrink: 0,
+                                }}
+                              >
                                 <button
                                   type="button"
                                   onClick={() => setAllItemsInGroup(gid, true)}
-                                  style={{ ...outlineBtn, fontSize: 10, padding: "5px 10px" }}
+                                  style={{
+                                    ...outlineBtn,
+                                    fontSize: 10,
+                                    padding: "5px 10px",
+                                  }}
                                   disabled={labels.length === 0}
                                 >
                                   All
@@ -1863,23 +2095,50 @@ function ProductFamiliesContent() {
                                 <button
                                   type="button"
                                   onClick={() => setAllItemsInGroup(gid, false)}
-                                  style={{ ...outlineBtn, fontSize: 10, padding: "5px 10px" }}
+                                  style={{
+                                    ...outlineBtn,
+                                    fontSize: 10,
+                                    padding: "5px 10px",
+                                  }}
                                 >
                                   Clear
                                 </button>
                               </div>
                             </div>
-                            <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+                            <div
+                              style={{
+                                padding: "10px 12px",
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: 8,
+                              }}
+                            >
                               <input
                                 value={specItemSearch[gid] ?? ""}
                                 onChange={(e) =>
-                                  setSpecItemSearch((prev) => ({ ...prev, [gid]: e.target.value.toUpperCase() }))
+                                  setSpecItemSearch((prev) => ({
+                                    ...prev,
+                                    [gid]: e.target.value.toUpperCase(),
+                                  }))
                                 }
                                 placeholder="Filter items…"
-                                style={{ ...inputStyle, fontSize: 12, padding: "8px 12px" }}
+                                style={{
+                                  ...inputStyle,
+                                  fontSize: 12,
+                                  padding: "8px 12px",
+                                }}
                               />
                               {filtered.length === 0 ? (
-                                <p style={{ fontSize: 11, color: TOKEN.textSec, textAlign: "center", padding: "12px 0", background: TOKEN.bg, borderRadius: 8 }}>
+                                <p
+                                  style={{
+                                    fontSize: 11,
+                                    color: TOKEN.textSec,
+                                    textAlign: "center",
+                                    padding: "12px 0",
+                                    background: TOKEN.bg,
+                                    borderRadius: 8,
+                                  }}
+                                >
                                   No items found
                                 </p>
                               ) : (
@@ -1899,7 +2158,9 @@ function ProductFamiliesContent() {
                                       <button
                                         type="button"
                                         key={itemId}
-                                        onClick={() => toggleSpecItem(gid, itemId)}
+                                        onClick={() =>
+                                          toggleSpecItem(gid, itemId)
+                                        }
                                         style={{
                                           display: "flex",
                                           alignItems: "center",
@@ -1907,7 +2168,9 @@ function ProductFamiliesContent() {
                                           padding: "8px 10px",
                                           border: `1px solid ${checked ? `${TOKEN.primary}40` : TOKEN.border}`,
                                           borderRadius: 8,
-                                          background: checked ? `${TOKEN.primary}06` : TOKEN.surface,
+                                          background: checked
+                                            ? `${TOKEN.primary}06`
+                                            : TOKEN.surface,
                                           cursor: "pointer",
                                           textAlign: "left",
                                         }}
@@ -1918,16 +2181,27 @@ function ProductFamiliesContent() {
                                             height: 16,
                                             borderRadius: 4,
                                             border: `1.5px solid ${checked ? TOKEN.primary : TOKEN.border}`,
-                                            background: checked ? TOKEN.primary : "transparent",
+                                            background: checked
+                                              ? TOKEN.primary
+                                              : "transparent",
                                             display: "flex",
                                             alignItems: "center",
                                             justifyContent: "center",
                                             flexShrink: 0,
                                           }}
                                         >
-                                          {checked && <Check size={10} color="#fff" />}
+                                          {checked && (
+                                            <Check size={10} color="#fff" />
+                                          )}
                                         </span>
-                                        <span style={{ fontSize: 11, fontWeight: 700, color: TOKEN.textSec, textTransform: "uppercase" }}>
+                                        <span
+                                          style={{
+                                            fontSize: 11,
+                                            fontWeight: 700,
+                                            color: TOKEN.textSec,
+                                            textTransform: "uppercase",
+                                          }}
+                                        >
                                           {label}
                                         </span>
                                       </button>
@@ -1936,7 +2210,14 @@ function ProductFamiliesContent() {
                                 </div>
                               )}
                               {(specItemSelections[gid] ?? []).length === 0 && (
-                                <p style={{ margin: 0, fontSize: 10, color: TOKEN.danger, fontWeight: 700 }}>
+                                <p
+                                  style={{
+                                    margin: 0,
+                                    fontSize: 10,
+                                    color: TOKEN.danger,
+                                    fontWeight: 700,
+                                  }}
+                                >
                                   Select at least one item for this group
                                 </p>
                               )}
@@ -1965,7 +2246,15 @@ function ProductFamiliesContent() {
                           marginBottom: 10,
                         }}
                       >
-                        <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: TOKEN.textSec, textTransform: "uppercase" }}>
+                        <p
+                          style={{
+                            margin: 0,
+                            fontSize: 11,
+                            fontWeight: 800,
+                            color: TOKEN.textSec,
+                            textTransform: "uppercase",
+                          }}
+                        >
                           Selection Summary
                         </p>
                         <span
@@ -1979,10 +2268,17 @@ function ProductFamiliesContent() {
                             padding: "2px 8px",
                           }}
                         >
-                          {selectedSummary.length} Group{selectedSummary.length !== 1 ? "s" : ""}
+                          {selectedSummary.length} Group
+                          {selectedSummary.length !== 1 ? "s" : ""}
                         </span>
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 8,
+                        }}
+                      >
                         {selectedSummary.map((g) => {
                           const seen = new Set<string>();
                           const uniqueItems = g.specItems.filter((it) => {
@@ -2000,10 +2296,24 @@ function ProductFamiliesContent() {
                                 padding: "10px 12px",
                               }}
                             >
-                              <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 800, color: TOKEN.textPri, textTransform: "uppercase" }}>
+                              <p
+                                style={{
+                                  margin: "0 0 6px",
+                                  fontSize: 11,
+                                  fontWeight: 800,
+                                  color: TOKEN.textPri,
+                                  textTransform: "uppercase",
+                                }}
+                              >
                                 {(g.groupName ?? "").toUpperCase()}
                               </p>
-                              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  flexWrap: "wrap",
+                                  gap: 4,
+                                }}
+                              >
                                 {uniqueItems.map((it) => (
                                   <span
                                     key={it.id}
@@ -2097,8 +2407,10 @@ function ProductFamiliesContent() {
         dangerouslySetInnerHTML={{
           __html: `
             @keyframes spin { to { transform: rotate(360deg); } }
-            .desktop-only-btn { display: none; }
-            @media (min-width: 768px) { .desktop-only-btn { display: flex !important; } }
+            /* Show desktop "New Family" button only on ≥1024 px (same breakpoint as sidebar) */
+            @media (min-width: 1024px) {
+              .families-desktop-add-btn { display: flex !important; }
+            }
           `,
         }}
       />
