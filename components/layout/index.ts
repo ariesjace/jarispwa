@@ -1,13 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  JARIS CMS — Global Component Barrel
-//
-//  Usage examples:
-//
-//    import CMSLayout from "@/components/cms"
-//
-//    import { Sidebar, AppHeader, BottomNav, FAB, FloatingMenu, LogoutModal, NavAvatar } from "@/components/cms"
-//
-//    import { TOKEN, NAV_SECTIONS, type NavId, type CmsUser } from "@/components/cms"
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Layout shell
@@ -23,6 +15,9 @@ export { FloatingMenu }        from "./FloatingMenu";
 export { LogoutModal }         from "./LogoutModal";
 export { NavAvatar }           from "./NavAvatar";
 
+// FAB context — lets pages register custom mobile FAB actions via usePageFAB()
+export { FABProvider, useFABContext, usePageFAB } from "./FABContext";
+
 // Data & tokens
 export { TOKEN, SPRING_FAST, SPRING_MED, EASE_OUT } from "./tokens";
 export {
@@ -36,7 +31,7 @@ export type { NavId, NavSection, CmsUser }          from "./nav-data";
 export type { SidebarProps }                        from "./Sidebar";
 export type { AppHeaderProps }                      from "./AppHeader";
 export type { BottomNavProps }                      from "./BottomNav";
-export type { FABProps }                            from "./FAB";
+export type { FABProps, FABAction }                 from "./FAB";
 export type { FloatingMenuProps }                   from "./FloatingMenu";
 export type { LogoutModalProps }                    from "./LogoutModal";
 export type { NavAvatarProps }                      from "./NavAvatar";

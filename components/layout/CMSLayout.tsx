@@ -10,6 +10,7 @@ import { AppHeader } from "./AppHeader";
 import { BottomNav } from "./BottomNav";
 import { FAB } from "./FAB";
 import { LogoutModal } from "./LogoutModal";
+import { FABProvider, useFABContext } from "./FABContext";
 import { useAuth } from "@/lib/useAuth";
 import {
   getAccessibleNavSections,
@@ -32,13 +33,17 @@ export interface CMSLayoutProps {
   onChatOpen?: () => void;
 }
 
-export function CMSLayout({
+// ─── Inner layout (reads FAB context) ────────────────────────────────────────
+// Split from the outer wrapper so useFABContext() has access to the provider.
+
+function CMSLayoutInner({
   currentNavId,
   children,
   onChatOpen,
 }: CMSLayoutProps) {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const { actions: fabActions } = useFABContext();
 
   const cmsUser: CmsUser = useMemo(() => {
     if (!user) return { name: "—", role: "—", initials: "?" };
@@ -54,7 +59,7 @@ export function CMSLayout({
     return getAccessibleNavSections(user.role);
   }, [user]);
 
-  // Active tab is still local state — resets when the nav section changes
+  // Active tab resets when the nav section changes
   const [activeTab, setActiveTab] = useState("");
 
   useEffect(() => {
@@ -76,14 +81,12 @@ export function CMSLayout({
     return () => mq.removeEventListener("change", update);
   }, []);
 
-  // Nav change → push to that section's root URL
   const handleNavChange = (id: NavId) => {
     router.push(NAV_ROUTES[id]);
   };
 
   const visibleTabs = user ? getAccessibleTabs(currentNavId, user.role) : [];
 
-  // Don't render until we have a tab resolved
   if (!activeTab) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -189,7 +192,15 @@ export function CMSLayout({
             />
           </div>
         )}
-        {isMobile && <FAB bottomOffset={80} />}
+
+        {/*
+         * Context-driven FAB — only rendered on mobile when a page has
+         * registered actions via usePageFAB(). Pages that don't call
+         * usePageFAB get no FAB at all.
+         */}
+        {isMobile && fabActions.length > 0 && (
+          <FAB actions={fabActions} bottomOffset={80} />
+        )}
 
         <LogoutModal
           isOpen={logoutOpen}
@@ -201,6 +212,16 @@ export function CMSLayout({
         />
       </div>
     </>
+  );
+}
+
+// ─── Public export — wraps inner layout in FABProvider ────────────────────────
+
+export function CMSLayout(props: CMSLayoutProps) {
+  return (
+    <FABProvider>
+      <CMSLayoutInner {...props} />
+    </FABProvider>
   );
 }
 
