@@ -1,14 +1,5 @@
 "use client";
 
-/**
- * components/pages/products/Families.tsx
- *
- * Changes from previous version:
- *  - Filter status buttons moved directly below the search bar
- *  - "Add New Family" injected into the mobile FAB via usePageFAB()
- *  - Title input exposed via ref so FAB action can focus it
- */
-
 import * as React from "react";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useDropzone } from "react-dropzone";
@@ -764,22 +755,6 @@ function FamilyCard({
           </span>
         </div>
 
-        {family.description && (
-          <p
-            style={{
-              margin: 0,
-              fontSize: 11,
-              color: TOKEN.textSec,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              fontStyle: "italic",
-            }}
-          >
-            {family.description}
-          </p>
-        )}
-
         {family.productUsage && family.productUsage.length > 0 && (
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
             {family.productUsage.map((u) => {
@@ -854,16 +829,13 @@ function ProductFamiliesContent() {
 
   // ── List state ─────────────────────────────────────────────────────────────
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState<
-    "all" | "active" | "inactive"
-  >("all");
+  const [filterStatus, setFilterStatus] = useState<"all" | "active" | "inactive">("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [deleteTarget, setDeleteTarget] = useState<ProductFamilyDoc | null>(
-    null,
-  );
+  const [deleteTarget, setDeleteTarget] = useState<ProductFamilyDoc | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [formModalOpen, setFormModalOpen] = useState(false);
 
   // ── Form state ─────────────────────────────────────────────────────────────
   const [editId, setEditId] = useState<string | null>(null);
@@ -874,31 +846,18 @@ function ProductFamiliesContent() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [openSpecGroups, setOpenSpecGroups] = useState(false);
-  const [selectedSpecGroupIds, setSelectedSpecGroupIds] = useState<string[]>(
-    [],
-  );
-  const [specItemSelections, setSpecItemSelections] = useState<
-    Record<string, string[]>
-  >({});
-  const [specItemSearch, setSpecItemSearch] = useState<Record<string, string>>(
-    {},
-  );
+  const [selectedSpecGroupIds, setSelectedSpecGroupIds] = useState<string[]>([]);
+  const [specItemSelections, setSpecItemSelections] = useState<Record<string, string[]>>({});
+  const [specItemSearch, setSpecItemSearch] = useState<Record<string, string>>({});
   const [openApplications, setOpenApplications] = useState(false);
-  const [selectedApplicationIds, setSelectedApplicationIds] = useState<
-    string[]
-  >([]);
+  const [selectedApplicationIds, setSelectedApplicationIds] = useState<string[]>([]);
 
-  // ── Ref for FAB focus action ───────────────────────────────────────────────
   const titleInputRef = useRef<HTMLInputElement>(null);
-  const formTopRef = useRef<HTMLDivElement>(null);
 
   // ── Firestore ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    const q = query(
-      collection(db, "productfamilies"),
-      orderBy("createdAt", "desc"),
-    );
+    const q = query(collection(db, "productfamilies"), orderBy("createdAt", "desc"));
     return onSnapshot(q, (snap) => {
       setFamilies(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
       setLoadingFamilies(false);
@@ -915,9 +874,7 @@ function ProductFamiliesContent() {
   useEffect(() => {
     const q = query(collection(db, "applications"), orderBy("title", "asc"));
     return onSnapshot(q, (snap) => {
-      setApplications(
-        snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })),
-      );
+      setApplications(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
     });
   }, []);
 
@@ -958,10 +915,7 @@ function ProductFamiliesContent() {
           .map((l) => l.toUpperCase().trim());
         const chosenItemIds = new Set(specItemSelections[specGroupId] ?? []);
         const chosenItems: SpecItemRef[] = labels
-          .map((label) => ({
-            id: buildSpecItemId(specGroupId, label),
-            name: label,
-          }))
+          .map((label) => ({ id: buildSpecItemId(specGroupId, label), name: label }))
           .filter((item) => chosenItemIds.has(item.id));
         return { specGroupId, specItems: chosenItems };
       })
@@ -1003,14 +957,20 @@ function ProductFamiliesContent() {
     setSpecItemSelections({});
     setSpecItemSearch({});
     setSelectedApplicationIds([]);
+    setOpenSpecGroups(false);
+    setOpenApplications(false);
   }, []);
 
-  /** FAB "Add New Family" — scrolls to form top and focuses title input */
+  const handleCloseModal = useCallback(() => {
+    setFormModalOpen(false);
+    resetForm();
+  }, [resetForm]);
+
+  /** FAB "Add New Family" — opens the form drawer */
   const handleFABAddNew = useCallback(() => {
     resetForm();
-    formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    // Short delay to let scroll settle before focusing
-    setTimeout(() => titleInputRef.current?.focus(), 350);
+    setFormModalOpen(true);
+    setTimeout(() => titleInputRef.current?.focus(), 150);
   }, [resetForm]);
 
   // Register mobile FAB
@@ -1075,10 +1035,7 @@ function ProductFamiliesContent() {
       .filter(Boolean)
       .map((l) => l.toUpperCase().trim());
     const ids = labels.map((label) => buildSpecItemId(specGroupId, label));
-    setSpecItemSelections((prev) => ({
-      ...prev,
-      [specGroupId]: on ? ids : [],
-    }));
+    setSpecItemSelections((prev) => ({ ...prev, [specGroupId]: on ? ids : [] }));
   };
 
   const validate = (): { ok: boolean; message?: string } => {
@@ -1089,10 +1046,7 @@ function ProductFamiliesContent() {
       const chosen = specItemSelections[gid] ?? [];
       if (chosen.length === 0) {
         const name = specGroupById.get(gid)?.name ?? "Spec Group";
-        return {
-          ok: false,
-          message: `Select at least one spec item for "${name}"`,
-        };
+        return { ok: false, message: `Select at least one spec item for "${name}"` };
       }
     }
     return { ok: true };
@@ -1142,10 +1096,7 @@ function ProductFamiliesContent() {
       if (selectedApplicationIds.length > 0 && normalisedTitle) {
         try {
           const productsSnap = await getDocs(
-            query(
-              collection(db, "products"),
-              where("productFamily", "==", normalisedTitle),
-            ),
+            query(collection(db, "products"), where("productFamily", "==", normalisedTitle)),
           );
           if (!productsSnap.empty) {
             const batch = writeBatch(db);
@@ -1201,10 +1152,9 @@ function ProductFamiliesContent() {
         console.warn("TDS template generation failed:", tplErr);
       }
 
-      toast.success(
-        editId ? "Product family updated" : "Product family created",
-      );
+      toast.success(editId ? "Product family updated" : "Product family created");
       resetForm();
+      setFormModalOpen(false);
     } catch {
       toast.error("Error processing request");
     } finally {
@@ -1231,9 +1181,7 @@ function ProductFamiliesContent() {
     setIsBulkDeleting(true);
     try {
       await Promise.all(
-        Array.from(selectedIds).map((id) =>
-          deleteDoc(doc(db, "productfamilies", id)),
-        ),
+        Array.from(selectedIds).map((id) => deleteDoc(doc(db, "productfamilies", id))),
       );
       toast.success(`Deleted ${selectedIds.size} product families`);
       setSelectedIds(new Set());
@@ -1249,1004 +1197,260 @@ function ProductFamiliesContent() {
 
   return (
     <div style={{ width: "100%", maxWidth: 1400, margin: "0 auto" }}>
-      {/* ── Page header ── */}
-      <div style={{ paddingTop: 20, paddingBottom: 20 }}>
-        <h1
-          style={{
-            margin: 0,
-            fontSize: 24,
-            fontWeight: 800,
-            color: TOKEN.textPri,
-          }}
-        >
-          Product Families
-        </h1>
-        <p style={{ margin: "4px 0 0", fontSize: 13, color: TOKEN.textSec }}>
-          Create and manage product families, specs, and application
-          assignments. A blank TDS template is auto-generated on each save.
-        </p>
-      </div>
 
-      {/* ── Two-column layout ── */}
+      {/* ── Page header ── */}
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0,1fr) minmax(0,2fr)",
-          gap: 24,
-          alignItems: "start",
+          paddingTop: 20,
+          paddingBottom: 20,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 16,
         }}
-        className="families-grid"
       >
-        {/* ════ FORM COLUMN ════ */}
-        <div
-          ref={formTopRef}
-          style={{
-            position: "sticky",
-            top: 80,
-            zIndex: 10,
-            maxHeight: "calc(100vh - 100px)",
-            overflowY: "auto",
-          }}
-        >
-          <div style={sectionCard}>
-            {/* Form header */}
-            <div
-              style={{
-                padding: "16px 20px",
-                borderBottom: `1px solid ${TOKEN.border}`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
-            >
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 13,
-                  fontWeight: 800,
-                  color: TOKEN.textPri,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.04em",
-                }}
-              >
-                {editId ? "Edit Family" : "New Family"}
-              </p>
-              {editId && (
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  style={{ ...outlineBtn, fontSize: 11 }}
-                >
-                  <RotateCcw size={12} /> Cancel
-                </button>
-              )}
-            </div>
-
-            <form
-              onSubmit={handleSubmit}
-              style={{
-                padding: "20px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 20,
-              }}
-            >
-              {/* Title */}
-              <div>
-                <label style={labelStyle}>
-                  Title <span style={{ color: TOKEN.danger }}>*</span>
-                </label>
-                <input
-                  ref={titleInputRef}
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value.toUpperCase())}
-                  placeholder="E.G. RECESSED LIGHTS"
-                  style={{
-                    ...inputStyle,
-                    borderColor: !title.trim()
-                      ? `${TOKEN.danger}60`
-                      : TOKEN.border,
-                  }}
-                />
-                {!title.trim() && (
-                  <p
-                    style={{
-                      margin: "5px 0 0",
-                      fontSize: 10,
-                      color: TOKEN.danger,
-                      fontWeight: 700,
-                    }}
-                  >
-                    Title is required
-                  </p>
-                )}
-              </div>
-
-              {/* Product Usage */}
-              <div>
-                <label style={labelStyle}>
-                  Product Usage <span style={{ opacity: 0.5 }}>(optional)</span>
-                </label>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {PRODUCT_USAGE_OPTIONS.map((u) => (
-                    <UsagePill
-                      key={u}
-                      label={u}
-                      active={productUsage.includes(u)}
-                      onClick={() =>
-                        setProductUsage((p) =>
-                          p.includes(u) ? p.filter((v) => v !== u) : [...p, u],
-                        )
-                      }
-                    />
-                  ))}
-                </div>
-                {productUsage.length === 0 && (
-                  <p
-                    style={{
-                      margin: "6px 0 0",
-                      fontSize: 10,
-                      color: TOKEN.textSec,
-                      fontWeight: 600,
-                    }}
-                  >
-                    Tagging usage helps filter families in the product form
-                  </p>
-                )}
-              </div>
-
-              {/* Image dropzone */}
-              <div>
-                <label style={labelStyle}>
-                  Image <span style={{ opacity: 0.5 }}>(optional)</span>
-                </label>
-                <div
-                  {...getRootProps()}
-                  style={{
-                    border: `2px dashed ${isDragActive ? TOKEN.primary : TOKEN.border}`,
-                    borderRadius: 10,
-                    background: isDragActive ? `${TOKEN.primary}08` : TOKEN.bg,
-                    padding: previewUrl ? 0 : 24,
-                    cursor: "pointer",
-                    overflow: "hidden",
-                    minHeight: previewUrl ? "auto" : 100,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    transition: "all 0.15s",
-                  }}
-                >
-                  <input {...getInputProps()} />
-                  {previewUrl ? (
-                    <div style={{ position: "relative", width: "100%" }}>
-                      <img
-                        src={previewUrl}
-                        style={{
-                          width: "100%",
-                          aspectRatio: "16/9",
-                          objectFit: "cover",
-                          display: "block",
-                        }}
-                        alt="Preview"
-                      />
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPreviewUrl("");
-                          setImageFile(null);
-                        }}
-                        style={{
-                          position: "absolute",
-                          top: 8,
-                          right: 8,
-                          width: 24,
-                          height: 24,
-                          borderRadius: 6,
-                          border: "none",
-                          background: TOKEN.danger,
-                          color: "#fff",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <X size={12} />
-                      </button>
-                    </div>
-                  ) : (
-                    <div style={{ textAlign: "center" }}>
-                      <ImageIcon
-                        size={20}
-                        style={{
-                          color: TOKEN.textSec,
-                          opacity: 0.4,
-                          margin: "0 auto 8px",
-                        }}
-                      />
-                      <p
-                        style={{
-                          margin: 0,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: TOKEN.textSec,
-                        }}
-                      >
-                        Drop image here
-                      </p>
-                      <p
-                        style={{
-                          margin: "2px 0 0",
-                          fontSize: 10,
-                          color: TOKEN.textSec,
-                          opacity: 0.6,
-                        }}
-                      >
-                        or click to browse
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Applications */}
-              <div>
-                <label
-                  style={{
-                    ...labelStyle,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                  }}
-                >
-                  <Briefcase size={10} />
-                  Applications <span style={{ opacity: 0.5 }}>(optional)</span>
-                </label>
-                <MultiSelectDropdown
-                  items={applications}
-                  selectedIds={selectedApplicationIds}
-                  onToggle={handleToggleApplication}
-                  getLabel={(a) => a.title ?? a.name ?? ""}
-                  placeholder="Select applications…"
-                  icon={Briefcase}
-                  open={openApplications}
-                  onOpenChange={setOpenApplications}
-                />
-                {selectedApplicationIds.length > 0 && (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 6,
-                      marginTop: 8,
-                    }}
-                  >
-                    {selectedApplicationIds.map((appId) => {
-                      const app = applicationById.get(appId);
-                      const name = app?.title ?? app?.name ?? appId;
-                      return (
-                        <span
-                          key={appId}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 5,
-                            fontSize: 10,
-                            fontWeight: 700,
-                            padding: "3px 8px 3px 10px",
-                            borderRadius: 6,
-                            background: TOKEN.bg,
-                            border: `1px solid ${TOKEN.border}`,
-                            color: TOKEN.textPri,
-                          }}
-                        >
-                          {name.toUpperCase()}
-                          <button
-                            type="button"
-                            onClick={() => handleToggleApplication(appId)}
-                            style={{
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              color: TOKEN.textSec,
-                              padding: 0,
-                              display: "flex",
-                              lineHeight: 1,
-                            }}
-                          >
-                            <X size={10} />
-                          </button>
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-                {selectedApplicationIds.length > 0 && (
-                  <p
-                    style={{
-                      margin: "5px 0 0",
-                      fontSize: 10,
-                      color: TOKEN.textSec,
-                      fontWeight: 600,
-                    }}
-                  >
-                    Products in this family will be tagged with the selected
-                    applications
-                  </p>
-                )}
-              </div>
-
-              {/* Spec Groups */}
-              <div>
-                <label style={labelStyle}>
-                  Spec Groups <span style={{ color: TOKEN.danger }}>*</span>
-                </label>
-                <MultiSelectDropdown
-                  items={specGroups}
-                  selectedIds={selectedSpecGroupIds}
-                  onToggle={canPickSpecs ? handleToggleSpecGroup : () => {}}
-                  getLabel={(g) => g.name ?? ""}
-                  placeholder={
-                    canPickSpecs ? "Select spec groups…" : "Enter a title first"
-                  }
-                  icon={Layers}
-                  open={openSpecGroups && canPickSpecs}
-                  onOpenChange={(v) => canPickSpecs && setOpenSpecGroups(v)}
-                />
-                {!canPickSpecs && (
-                  <p
-                    style={{
-                      margin: "5px 0 0",
-                      fontSize: 10,
-                      color: TOKEN.textSec,
-                      fontWeight: 600,
-                    }}
-                  >
-                    Spec selection unlocks after title is set
-                  </p>
-                )}
-              </div>
-
-              {/* Spec items per group */}
-              {selectedSpecGroupIds.length > 0 && (
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 12 }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    <label style={{ ...labelStyle, marginBottom: 0 }}>
-                      Spec Items <span style={{ color: TOKEN.danger }}>*</span>
-                    </label>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: TOKEN.textSec,
-                        background: TOKEN.bg,
-                        border: `1px solid ${TOKEN.border}`,
-                        borderRadius: 6,
-                        padding: "2px 8px",
-                      }}
-                    >
-                      {selectedSummary.reduce(
-                        (sum, g) => sum + g.specItems.length,
-                        0,
-                      )}{" "}
-                      selected
-                    </span>
-                  </div>
-
-                  {selectedSpecGroupIds.map((gid) => {
-                    const group = specGroupById.get(gid);
-                    const groupName = (group?.name ?? gid).toUpperCase();
-                    const labels = Array.from(
-                      new Set(
-                        (group?.items ?? [])
-                          .map((i) => i.label)
-                          .filter(Boolean)
-                          .map((l) => l.toUpperCase().trim()),
-                      ),
-                    );
-                    const search = (specItemSearch[gid] ?? "").toUpperCase();
-                    const filtered = search
-                      ? labels.filter((l) => l.includes(search))
-                      : labels;
-                    const selectedSet = new Set(specItemSelections[gid] ?? []);
-
-                    return (
-                      <div
-                        key={gid}
-                        style={{
-                          border: `1px solid ${TOKEN.border}`,
-                          borderRadius: 10,
-                          overflow: "hidden",
-                        }}
-                      >
-                        <div
-                          style={{
-                            padding: "10px 14px",
-                            borderBottom: `1px solid ${TOKEN.border}`,
-                            background: TOKEN.bg,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            gap: 8,
-                          }}
-                        >
-                          <div style={{ minWidth: 0 }}>
-                            <p
-                              style={{
-                                margin: 0,
-                                fontSize: 12,
-                                fontWeight: 800,
-                                color: TOKEN.textPri,
-                                textTransform: "uppercase",
-                              }}
-                            >
-                              {groupName}
-                            </p>
-                            <p
-                              style={{
-                                margin: "2px 0 0",
-                                fontSize: 10,
-                                color: TOKEN.textSec,
-                                fontWeight: 600,
-                              }}
-                            >
-                              {selectedSet.size} SELECTED · {labels.length}{" "}
-                              AVAILABLE
-                            </p>
-                          </div>
-                          <div
-                            style={{ display: "flex", gap: 6, flexShrink: 0 }}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => setAllItemsInGroup(gid, true)}
-                              style={{
-                                ...outlineBtn,
-                                fontSize: 10,
-                                padding: "5px 10px",
-                              }}
-                              disabled={labels.length === 0}
-                            >
-                              All
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setAllItemsInGroup(gid, false)}
-                              style={{
-                                ...outlineBtn,
-                                fontSize: 10,
-                                padding: "5px 10px",
-                              }}
-                            >
-                              Clear
-                            </button>
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            padding: "10px 12px",
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 8,
-                          }}
-                        >
-                          <input
-                            value={specItemSearch[gid] ?? ""}
-                            onChange={(e) =>
-                              setSpecItemSearch((prev) => ({
-                                ...prev,
-                                [gid]: e.target.value.toUpperCase(),
-                              }))
-                            }
-                            placeholder="Filter items…"
-                            style={{
-                              ...inputStyle,
-                              fontSize: 12,
-                              padding: "8px 12px",
-                            }}
-                          />
-                          {filtered.length === 0 ? (
-                            <p
-                              style={{
-                                fontSize: 11,
-                                color: TOKEN.textSec,
-                                textAlign: "center",
-                                padding: "12px 0",
-                                background: TOKEN.bg,
-                                borderRadius: 8,
-                              }}
-                            >
-                              No items found
-                            </p>
-                          ) : (
-                            <div
-                              style={{
-                                display: "grid",
-                                gridTemplateColumns: "1fr",
-                                gap: 4,
-                                maxHeight: 200,
-                                overflowY: "auto",
-                              }}
-                            >
-                              {filtered.map((label) => {
-                                const itemId = buildSpecItemId(gid, label);
-                                const checked = selectedSet.has(itemId);
-                                return (
-                                  <button
-                                    type="button"
-                                    key={itemId}
-                                    onClick={() => toggleSpecItem(gid, itemId)}
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: 10,
-                                      padding: "8px 10px",
-                                      border: `1px solid ${checked ? `${TOKEN.primary}40` : TOKEN.border}`,
-                                      borderRadius: 8,
-                                      background: checked
-                                        ? `${TOKEN.primary}06`
-                                        : TOKEN.surface,
-                                      cursor: "pointer",
-                                      textAlign: "left",
-                                    }}
-                                  >
-                                    <span
-                                      style={{
-                                        width: 16,
-                                        height: 16,
-                                        borderRadius: 4,
-                                        border: `1.5px solid ${checked ? TOKEN.primary : TOKEN.border}`,
-                                        background: checked
-                                          ? TOKEN.primary
-                                          : "transparent",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        flexShrink: 0,
-                                      }}
-                                    >
-                                      {checked && (
-                                        <Check size={10} color="#fff" />
-                                      )}
-                                    </span>
-                                    <span
-                                      style={{
-                                        fontSize: 11,
-                                        fontWeight: 700,
-                                        color: TOKEN.textSec,
-                                        textTransform: "uppercase",
-                                      }}
-                                    >
-                                      {label}
-                                    </span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                          {(specItemSelections[gid] ?? []).length === 0 && (
-                            <p
-                              style={{
-                                margin: 0,
-                                fontSize: 10,
-                                color: TOKEN.danger,
-                                fontWeight: 700,
-                              }}
-                            >
-                              Select at least one item for this group
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Selection summary */}
-              {selectedSummary.length > 0 && (
-                <div
-                  style={{
-                    background: TOKEN.bg,
-                    border: `1px solid ${TOKEN.border}`,
-                    borderRadius: 10,
-                    padding: "12px 14px",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      marginBottom: 10,
-                    }}
-                  >
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: 11,
-                        fontWeight: 800,
-                        color: TOKEN.textSec,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      Selection Summary
-                    </p>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: TOKEN.textSec,
-                        background: TOKEN.surface,
-                        border: `1px solid ${TOKEN.border}`,
-                        borderRadius: 6,
-                        padding: "2px 8px",
-                      }}
-                    >
-                      {selectedSummary.length} Group
-                      {selectedSummary.length !== 1 ? "s" : ""}
-                    </span>
-                  </div>
-                  <div
-                    style={{ display: "flex", flexDirection: "column", gap: 8 }}
-                  >
-                    {selectedSummary.map((g) => {
-                      const seen = new Set<string>();
-                      const uniqueItems = g.specItems.filter((it) => {
-                        if (seen.has(it.id)) return false;
-                        seen.add(it.id);
-                        return true;
-                      });
-                      return (
-                        <div
-                          key={g.specGroupId}
-                          style={{
-                            background: TOKEN.surface,
-                            border: `1px solid ${TOKEN.border}`,
-                            borderRadius: 8,
-                            padding: "10px 12px",
-                          }}
-                        >
-                          <p
-                            style={{
-                              margin: "0 0 6px",
-                              fontSize: 11,
-                              fontWeight: 800,
-                              color: TOKEN.textPri,
-                              textTransform: "uppercase",
-                            }}
-                          >
-                            {(g.groupName ?? "").toUpperCase()}
-                          </p>
-                          <div
-                            style={{
-                              display: "flex",
-                              flexWrap: "wrap",
-                              gap: 4,
-                            }}
-                          >
-                            {uniqueItems.map((it) => (
-                              <span
-                                key={it.id}
-                                style={{
-                                  fontSize: 9,
-                                  fontWeight: 700,
-                                  padding: "2px 7px",
-                                  borderRadius: 4,
-                                  background: TOKEN.bg,
-                                  border: `1px solid ${TOKEN.border}`,
-                                  color: TOKEN.textSec,
-                                  textTransform: "uppercase",
-                                }}
-                              >
-                                {it.name}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Submit */}
-              <button
-                type="submit"
-                disabled={isSubmitLoading}
-                style={{ ...primaryBtn, opacity: isSubmitLoading ? 0.7 : 1 }}
-              >
-                {isSubmitLoading ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" /> Saving…
-                  </>
-                ) : editId ? (
-                  "Push Update"
-                ) : (
-                  <>
-                    <Plus size={15} /> Create Product Family
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
-        </div>
-
-        {/* ════ LIST COLUMN ════ */}
         <div>
-          {/* ── Search + filters toolbar ── */}
-          {!loadingFamilies && families.length > 0 && (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-                marginBottom: 20,
-              }}
-            >
-              {/* 1. Search */}
-              <div style={{ position: "relative" }}>
-                <Search
-                  size={15}
-                  style={{
-                    position: "absolute",
-                    left: 14,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    color: TOKEN.textSec,
-                  }}
-                />
-                <input
-                  type="text"
-                  placeholder="Search product families…"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  style={{ ...inputStyle, paddingLeft: 40 }}
-                />
-                {searchTerm && (
-                  <button
-                    onClick={() => setSearchTerm("")}
-                    style={{
-                      position: "absolute",
-                      right: 12,
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      color: TOKEN.textSec,
-                      display: "flex",
-                    }}
-                  >
-                    <X size={13} />
-                  </button>
-                )}
-              </div>
-
-              {/* 2. Status filter buttons — below search */}
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {(["all", "active", "inactive"] as const).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setFilterStatus(s)}
-                    style={{
-                      padding: "7px 16px",
-                      borderRadius: 8,
-                      border: `1px solid ${filterStatus === s ? TOKEN.primary : TOKEN.border}`,
-                      background:
-                        filterStatus === s ? TOKEN.primary : TOKEN.surface,
-                      color: filterStatus === s ? "#fff" : TOKEN.textSec,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      textTransform: "capitalize",
-                      transition: "all 0.15s",
-                    }}
-                  >
-                    {s === "all"
-                      ? "All"
-                      : s.charAt(0).toUpperCase() + s.slice(1)}
-                  </button>
-                ))}
-              </div>
-
-              {/* 3. Count + bulk actions on the same row */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  minHeight: 32,
-                }}
-              >
-                <p style={{ margin: 0, fontSize: 12, color: TOKEN.textSec }}>
-                  Showing{" "}
-                  <strong style={{ color: TOKEN.textPri }}>
-                    {filteredFamilies.length}
-                  </strong>{" "}
-                  of {families.length} product families
-                </p>
-
-                {selectedIds.size > 0 && (
-                  <div
-                    style={{ display: "flex", gap: 6, alignItems: "center" }}
-                  >
-                    <button
-                      onClick={() => setBulkDeleteOpen(true)}
-                      style={{
-                        ...outlineBtn,
-                        color: TOKEN.dangerText,
-                        borderColor: `${TOKEN.danger}40`,
-                        background: TOKEN.dangerBg,
-                      }}
-                    >
-                      <Trash2 size={13} /> Delete {selectedIds.size}
-                    </button>
-                    <button
-                      onClick={() => setSelectedIds(new Set())}
-                      style={outlineBtn}
-                    >
-                      Deselect All
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ── Family grid ── */}
-          {loadingFamilies ? (
-            <div
-              style={{
-                padding: "80px 0",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 12,
-                color: TOKEN.textSec,
-              }}
-            >
-              <Loader2
-                size={28}
-                className="animate-spin"
-                style={{ color: TOKEN.primary }}
-              />
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  letterSpacing: "0.2em",
-                  textTransform: "uppercase",
-                }}
-              >
-                Loading…
-              </p>
-            </div>
-          ) : filteredFamilies.length === 0 ? (
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                minHeight: 320,
-                border: `2px dashed ${TOKEN.border}`,
-                borderRadius: 16,
-                background: TOKEN.bg,
-                padding: 32,
-                textAlign: "center",
-              }}
-            >
-              <div
-                style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: 999,
-                  background: TOKEN.surface,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginBottom: 16,
-                }}
-              >
-                <FolderPlus
-                  size={28}
-                  style={{ color: TOKEN.textSec, opacity: 0.3 }}
-                />
-              </div>
-              <h3
-                style={{
-                  margin: "0 0 8px",
-                  fontSize: 14,
-                  fontWeight: 800,
-                  color: TOKEN.textPri,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                }}
-              >
-                {families.length === 0 ? "No Product Families" : "No Results"}
-              </h3>
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: 12,
-                  color: TOKEN.textSec,
-                  maxWidth: 280,
-                  lineHeight: 1.6,
-                }}
-              >
-                {families.length === 0
-                  ? "Create a new product family using the panel on the left."
-                  : "No product families match your search or filter criteria."}
-              </p>
-            </div>
-          ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-                gap: 16,
-              }}
-            >
-              {filteredFamilies.map((f) => (
-                <FamilyCard
-                  key={f.id}
-                  family={f}
-                  selected={selectedIds.has(f.id)}
-                  onSelect={() => toggleSelect(f.id)}
-                  onDelete={() => setDeleteTarget(f)}
-                  onEdit={() => {
-                    setEditId(f.id);
-                    setTitle(f.title ?? "");
-                    setDescription("");
-                    setProductUsage((f.productUsage as ProductUsage[]) ?? []);
-                    setPreviewUrl(f.image ?? f.imageUrl ?? "");
-                    setImageFile(null);
-                    setSelectedApplicationIds(f.applications ?? []);
-                    if (Array.isArray(f.specs) && f.specs.length > 0) {
-                      setSelectedSpecGroupIds(
-                        f.specs.map((s) => s.specGroupId),
-                      );
-                      const nextSel: Record<string, string[]> = {};
-                      for (const s of f.specs) {
-                        nextSel[s.specGroupId] = (s.specItems ?? []).map(
-                          (it) => it.id,
-                        );
-                      }
-                      setSpecItemSelections(nextSel);
-                    } else if (
-                      Array.isArray(f.specifications) &&
-                      f.specifications.length > 0
-                    ) {
-                      setSelectedSpecGroupIds(f.specifications);
-                      setSpecItemSelections({});
-                    } else {
-                      setSelectedSpecGroupIds([]);
-                      setSpecItemSelections({});
-                    }
-                    // Scroll to form on mobile
-                    formTopRef.current?.scrollIntoView({
-                      behavior: "smooth",
-                      block: "start",
-                    });
-                  }}
-                />
-              ))}
-            </div>
-          )}
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: TOKEN.textPri }}>
+            Product Families
+          </h1>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: TOKEN.textSec }}>
+            Create and manage product families, specs, and application assignments.
+            A blank TDS template is auto-generated on each save.
+          </p>
         </div>
       </div>
+
+      {/* ── Search + filters toolbar ── */}
+      {!loadingFamilies && families.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            marginBottom: 20,
+          }}
+        >
+          {/* 1. Search */}
+          <div style={{ position: "relative" }}>
+            <Search
+              size={15}
+              style={{
+                position: "absolute",
+                left: 14,
+                top: "50%",
+                transform: "translateY(-50%)",
+                color: TOKEN.textSec,
+              }}
+            />
+            <input
+              type="text"
+              placeholder="Search product families…"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{ ...inputStyle, paddingLeft: 40 }}
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm("")}
+                style={{
+                  position: "absolute",
+                  right: 12,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: TOKEN.textSec,
+                  display: "flex",
+                }}
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+
+          {/* 2. Status filter buttons */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {(["all", "active", "inactive"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setFilterStatus(s)}
+                style={{
+                  padding: "7px 16px",
+                  borderRadius: 8,
+                  border: `1px solid ${filterStatus === s ? TOKEN.primary : TOKEN.border}`,
+                  background: filterStatus === s ? TOKEN.primary : TOKEN.surface,
+                  color: filterStatus === s ? "#fff" : TOKEN.textSec,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  textTransform: "capitalize",
+                  transition: "all 0.15s",
+                }}
+              >
+                {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          {/* 3. Count + bulk actions */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              minHeight: 32,
+            }}
+          >
+            <p style={{ margin: 0, fontSize: 12, color: TOKEN.textSec }}>
+              Showing{" "}
+              <strong style={{ color: TOKEN.textPri }}>{filteredFamilies.length}</strong>{" "}
+              of {families.length} product families
+            </p>
+
+            {selectedIds.size > 0 && (
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <button
+                  onClick={() => setBulkDeleteOpen(true)}
+                  style={{
+                    ...outlineBtn,
+                    color: TOKEN.dangerText,
+                    borderColor: `${TOKEN.danger}40`,
+                    background: TOKEN.dangerBg,
+                  }}
+                >
+                  <Trash2 size={13} /> Delete {selectedIds.size}
+                </button>
+                <button onClick={() => setSelectedIds(new Set())} style={outlineBtn}>
+                  Deselect All
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Family grid ── */}
+      {loadingFamilies ? (
+        <div
+          style={{
+            padding: "80px 0",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 12,
+            color: TOKEN.textSec,
+          }}
+        >
+          <Loader2 size={28} className="animate-spin" style={{ color: TOKEN.primary }} />
+          <p style={{ margin: 0, fontSize: 12, fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase" }}>
+            Loading…
+          </p>
+        </div>
+      ) : filteredFamilies.length === 0 ? (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: 320,
+            border: `2px dashed ${TOKEN.border}`,
+            borderRadius: 16,
+            background: TOKEN.bg,
+            padding: 32,
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 999,
+              background: TOKEN.surface,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              marginBottom: 16,
+            }}
+          >
+            <FolderPlus size={28} style={{ color: TOKEN.textSec, opacity: 0.3 }} />
+          </div>
+          <h3
+            style={{
+              margin: "0 0 8px",
+              fontSize: 14,
+              fontWeight: 800,
+              color: TOKEN.textPri,
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+            }}
+          >
+            {families.length === 0 ? "No Product Families" : "No Results"}
+          </h3>
+          <p style={{ margin: 0, fontSize: 12, color: TOKEN.textSec, maxWidth: 280, lineHeight: 1.6 }}>
+            {families.length === 0
+              ? "Click \"New Family\" to create your first product family."
+              : "No product families match your search or filter criteria."}
+          </p>
+          {families.length === 0 && (
+            <button
+              onClick={handleFABAddNew}
+              style={{
+                ...primaryBtn,
+                width: "auto",
+                marginTop: 20,
+                padding: "10px 24px",
+              }}
+            >
+              <Plus size={15} /> New Family
+            </button>
+          )}
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+            gap: 16,
+          }}
+        >
+          {filteredFamilies.map((f) => (
+            <FamilyCard
+              key={f.id}
+              family={f}
+              selected={selectedIds.has(f.id)}
+              onSelect={() => toggleSelect(f.id)}
+              onDelete={() => setDeleteTarget(f)}
+              onEdit={() => {
+                setEditId(f.id);
+                setTitle(f.title ?? "");
+                setDescription("");
+                setProductUsage((f.productUsage as ProductUsage[]) ?? []);
+                setPreviewUrl(f.image ?? f.imageUrl ?? "");
+                setImageFile(null);
+                setSelectedApplicationIds(f.applications ?? []);
+                if (Array.isArray(f.specs) && f.specs.length > 0) {
+                  setSelectedSpecGroupIds(f.specs.map((s) => s.specGroupId));
+                  const nextSel: Record<string, string[]> = {};
+                  for (const s of f.specs) {
+                    nextSel[s.specGroupId] = (s.specItems ?? []).map((it) => it.id);
+                  }
+                  setSpecItemSelections(nextSel);
+                } else if (Array.isArray(f.specifications) && f.specifications.length > 0) {
+                  setSelectedSpecGroupIds(f.specifications);
+                  setSpecItemSelections({});
+                } else {
+                  setSelectedSpecGroupIds([]);
+                  setSpecItemSelections({});
+                }
+                setFormModalOpen(true);
+              }}
+            />
+          ))}
+        </div>
+      )}
 
       {/* ── Delete modals ── */}
       <ConfirmDeleteModal
@@ -2266,12 +1470,636 @@ function ProductFamiliesContent() {
         description="This will permanently remove all selected product families. This cannot be undone."
       />
 
+      {/* ── Form Drawer Modal ── */}
+      <AnimatePresence>
+        {formModalOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              key="form-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={handleCloseModal}
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(15,23,42,0.45)",
+                backdropFilter: "blur(4px)",
+                zIndex: 300,
+              }}
+            />
+            {/* Drawer panel */}
+            <motion.div
+              key="form-drawer"
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", stiffness: 300, damping: 32 }}
+              style={{
+                position: "fixed",
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: "min(480px, 100vw)",
+                background: TOKEN.surface,
+                zIndex: 301,
+                display: "flex",
+                flexDirection: "column",
+                boxShadow: "-8px 0 40px rgba(15,23,42,0.18)",
+                overflow: "hidden",
+              }}
+            >
+              {/* Drawer Header */}
+              <div
+                style={{
+                  padding: "16px 20px",
+                  borderBottom: `1px solid ${TOKEN.border}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexShrink: 0,
+                  background: TOKEN.surface,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div
+                    style={{
+                      width: 34,
+                      height: 34,
+                      borderRadius: 10,
+                      background: `${TOKEN.primary}12`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <FolderPlus size={16} color={TOKEN.primary} />
+                  </div>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 14,
+                      fontWeight: 800,
+                      color: TOKEN.textPri,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    {editId ? "Edit Family" : "New Family"}
+                  </p>
+                </div>
+                <button
+                  onClick={handleCloseModal}
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 10,
+                    border: `1px solid ${TOKEN.border}`,
+                    background: TOKEN.bg,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    color: TOKEN.textSec,
+                    flexShrink: 0,
+                  }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Drawer Body — scrollable */}
+              <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
+                <form
+                  onSubmit={handleSubmit}
+                  style={{ display: "flex", flexDirection: "column", gap: 20 }}
+                >
+                  {/* Title */}
+                  <div>
+                    <label style={labelStyle}>
+                      Title <span style={{ color: TOKEN.danger }}>*</span>
+                    </label>
+                    <input
+                      ref={titleInputRef}
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value.toUpperCase())}
+                      placeholder="E.G. RECESSED LIGHTS"
+                      style={{
+                        ...inputStyle,
+                        borderColor: !title.trim() ? `${TOKEN.danger}60` : TOKEN.border,
+                      }}
+                    />
+                    {!title.trim() && (
+                      <p style={{ margin: "5px 0 0", fontSize: 10, color: TOKEN.danger, fontWeight: 700 }}>
+                        Title is required
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Product Usage */}
+                  <div>
+                    <label style={labelStyle}>
+                      Product Usage <span style={{ opacity: 0.5 }}>(optional)</span>
+                    </label>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {PRODUCT_USAGE_OPTIONS.map((u) => (
+                        <UsagePill
+                          key={u}
+                          label={u}
+                          active={productUsage.includes(u)}
+                          onClick={() =>
+                            setProductUsage((p) =>
+                              p.includes(u) ? p.filter((v) => v !== u) : [...p, u],
+                            )
+                          }
+                        />
+                      ))}
+                    </div>
+                    {productUsage.length === 0 && (
+                      <p style={{ margin: "6px 0 0", fontSize: 10, color: TOKEN.textSec, fontWeight: 600 }}>
+                        Tagging usage helps filter families in the product form
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Image dropzone */}
+                  <div>
+                    <label style={labelStyle}>
+                      Image <span style={{ opacity: 0.5 }}>(optional)</span>
+                    </label>
+                    <div
+                      {...getRootProps()}
+                      style={{
+                        border: `2px dashed ${isDragActive ? TOKEN.primary : TOKEN.border}`,
+                        borderRadius: 10,
+                        background: isDragActive ? `${TOKEN.primary}08` : TOKEN.bg,
+                        padding: previewUrl ? 0 : 24,
+                        cursor: "pointer",
+                        overflow: "hidden",
+                        minHeight: previewUrl ? "auto" : 100,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      <input {...getInputProps()} />
+                      {previewUrl ? (
+                        <div style={{ position: "relative", width: "100%" }}>
+                          <img
+                            src={previewUrl}
+                            style={{
+                              width: "100%",
+                              aspectRatio: "16/9",
+                              objectFit: "cover",
+                              display: "block",
+                            }}
+                            alt="Preview"
+                          />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPreviewUrl("");
+                              setImageFile(null);
+                            }}
+                            style={{
+                              position: "absolute",
+                              top: 8,
+                              right: 8,
+                              width: 24,
+                              height: 24,
+                              borderRadius: 6,
+                              border: "none",
+                              background: TOKEN.danger,
+                              color: "#fff",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div style={{ textAlign: "center" }}>
+                          <ImageIcon size={20} style={{ color: TOKEN.textSec, opacity: 0.4, margin: "0 auto 8px" }} />
+                          <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: TOKEN.textSec }}>
+                            Drop image here
+                          </p>
+                          <p style={{ margin: "2px 0 0", fontSize: 10, color: TOKEN.textSec, opacity: 0.6 }}>
+                            or click to browse
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Applications */}
+                  <div>
+                    <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}>
+                      <Briefcase size={10} />
+                      Applications <span style={{ opacity: 0.5 }}>(optional)</span>
+                    </label>
+                    <MultiSelectDropdown
+                      items={applications}
+                      selectedIds={selectedApplicationIds}
+                      onToggle={handleToggleApplication}
+                      getLabel={(a) => a.title ?? a.name ?? ""}
+                      placeholder="Select applications…"
+                      icon={Briefcase}
+                      open={openApplications}
+                      onOpenChange={setOpenApplications}
+                    />
+                    {selectedApplicationIds.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                        {selectedApplicationIds.map((appId) => {
+                          const app = applicationById.get(appId);
+                          const name = app?.title ?? app?.name ?? appId;
+                          return (
+                            <span
+                              key={appId}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 5,
+                                fontSize: 10,
+                                fontWeight: 700,
+                                padding: "3px 8px 3px 10px",
+                                borderRadius: 6,
+                                background: TOKEN.bg,
+                                border: `1px solid ${TOKEN.border}`,
+                                color: TOKEN.textPri,
+                              }}
+                            >
+                              {name.toUpperCase()}
+                              <button
+                                type="button"
+                                onClick={() => handleToggleApplication(appId)}
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  cursor: "pointer",
+                                  color: TOKEN.textSec,
+                                  padding: 0,
+                                  display: "flex",
+                                  lineHeight: 1,
+                                }}
+                              >
+                                <X size={10} />
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {selectedApplicationIds.length > 0 && (
+                      <p style={{ margin: "5px 0 0", fontSize: 10, color: TOKEN.textSec, fontWeight: 600 }}>
+                        Products in this family will be tagged with the selected applications
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Spec Groups */}
+                  <div>
+                    <label style={labelStyle}>
+                      Spec Groups <span style={{ color: TOKEN.danger }}>*</span>
+                    </label>
+                    <MultiSelectDropdown
+                      items={specGroups}
+                      selectedIds={selectedSpecGroupIds}
+                      onToggle={canPickSpecs ? handleToggleSpecGroup : () => {}}
+                      getLabel={(g) => g.name ?? ""}
+                      placeholder={canPickSpecs ? "Select spec groups…" : "Enter a title first"}
+                      icon={Layers}
+                      open={openSpecGroups && canPickSpecs}
+                      onOpenChange={(v) => canPickSpecs && setOpenSpecGroups(v)}
+                    />
+                    {!canPickSpecs && (
+                      <p style={{ margin: "5px 0 0", fontSize: 10, color: TOKEN.textSec, fontWeight: 600 }}>
+                        Spec selection unlocks after title is set
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Spec items per group */}
+                  {selectedSpecGroupIds.length > 0 && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                        }}
+                      >
+                        <label style={{ ...labelStyle, marginBottom: 0 }}>
+                          Spec Items <span style={{ color: TOKEN.danger }}>*</span>
+                        </label>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            color: TOKEN.textSec,
+                            background: TOKEN.bg,
+                            border: `1px solid ${TOKEN.border}`,
+                            borderRadius: 6,
+                            padding: "2px 8px",
+                          }}
+                        >
+                          {selectedSummary.reduce((sum, g) => sum + g.specItems.length, 0)} selected
+                        </span>
+                      </div>
+
+                      {selectedSpecGroupIds.map((gid) => {
+                        const group = specGroupById.get(gid);
+                        const groupName = (group?.name ?? gid).toUpperCase();
+                        const labels = Array.from(
+                          new Set(
+                            (group?.items ?? [])
+                              .map((i) => i.label)
+                              .filter(Boolean)
+                              .map((l) => l.toUpperCase().trim()),
+                          ),
+                        );
+                        const search = (specItemSearch[gid] ?? "").toUpperCase();
+                        const filtered = search ? labels.filter((l) => l.includes(search)) : labels;
+                        const selectedSet = new Set(specItemSelections[gid] ?? []);
+
+                        return (
+                          <div
+                            key={gid}
+                            style={{ border: `1px solid ${TOKEN.border}`, borderRadius: 10, overflow: "hidden" }}
+                          >
+                            <div
+                              style={{
+                                padding: "10px 14px",
+                                borderBottom: `1px solid ${TOKEN.border}`,
+                                background: TOKEN.bg,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: 8,
+                              }}
+                            >
+                              <div style={{ minWidth: 0 }}>
+                                <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: TOKEN.textPri, textTransform: "uppercase" }}>
+                                  {groupName}
+                                </p>
+                                <p style={{ margin: "2px 0 0", fontSize: 10, color: TOKEN.textSec, fontWeight: 600 }}>
+                                  {selectedSet.size} SELECTED · {labels.length} AVAILABLE
+                                </p>
+                              </div>
+                              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setAllItemsInGroup(gid, true)}
+                                  style={{ ...outlineBtn, fontSize: 10, padding: "5px 10px" }}
+                                  disabled={labels.length === 0}
+                                >
+                                  All
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setAllItemsInGroup(gid, false)}
+                                  style={{ ...outlineBtn, fontSize: 10, padding: "5px 10px" }}
+                                >
+                                  Clear
+                                </button>
+                              </div>
+                            </div>
+                            <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+                              <input
+                                value={specItemSearch[gid] ?? ""}
+                                onChange={(e) =>
+                                  setSpecItemSearch((prev) => ({ ...prev, [gid]: e.target.value.toUpperCase() }))
+                                }
+                                placeholder="Filter items…"
+                                style={{ ...inputStyle, fontSize: 12, padding: "8px 12px" }}
+                              />
+                              {filtered.length === 0 ? (
+                                <p style={{ fontSize: 11, color: TOKEN.textSec, textAlign: "center", padding: "12px 0", background: TOKEN.bg, borderRadius: 8 }}>
+                                  No items found
+                                </p>
+                              ) : (
+                                <div
+                                  style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "1fr",
+                                    gap: 4,
+                                    maxHeight: 200,
+                                    overflowY: "auto",
+                                  }}
+                                >
+                                  {filtered.map((label) => {
+                                    const itemId = buildSpecItemId(gid, label);
+                                    const checked = selectedSet.has(itemId);
+                                    return (
+                                      <button
+                                        type="button"
+                                        key={itemId}
+                                        onClick={() => toggleSpecItem(gid, itemId)}
+                                        style={{
+                                          display: "flex",
+                                          alignItems: "center",
+                                          gap: 10,
+                                          padding: "8px 10px",
+                                          border: `1px solid ${checked ? `${TOKEN.primary}40` : TOKEN.border}`,
+                                          borderRadius: 8,
+                                          background: checked ? `${TOKEN.primary}06` : TOKEN.surface,
+                                          cursor: "pointer",
+                                          textAlign: "left",
+                                        }}
+                                      >
+                                        <span
+                                          style={{
+                                            width: 16,
+                                            height: 16,
+                                            borderRadius: 4,
+                                            border: `1.5px solid ${checked ? TOKEN.primary : TOKEN.border}`,
+                                            background: checked ? TOKEN.primary : "transparent",
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            flexShrink: 0,
+                                          }}
+                                        >
+                                          {checked && <Check size={10} color="#fff" />}
+                                        </span>
+                                        <span style={{ fontSize: 11, fontWeight: 700, color: TOKEN.textSec, textTransform: "uppercase" }}>
+                                          {label}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {(specItemSelections[gid] ?? []).length === 0 && (
+                                <p style={{ margin: 0, fontSize: 10, color: TOKEN.danger, fontWeight: 700 }}>
+                                  Select at least one item for this group
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Selection summary */}
+                  {selectedSummary.length > 0 && (
+                    <div
+                      style={{
+                        background: TOKEN.bg,
+                        border: `1px solid ${TOKEN.border}`,
+                        borderRadius: 10,
+                        padding: "12px 14px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          marginBottom: 10,
+                        }}
+                      >
+                        <p style={{ margin: 0, fontSize: 11, fontWeight: 800, color: TOKEN.textSec, textTransform: "uppercase" }}>
+                          Selection Summary
+                        </p>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            color: TOKEN.textSec,
+                            background: TOKEN.surface,
+                            border: `1px solid ${TOKEN.border}`,
+                            borderRadius: 6,
+                            padding: "2px 8px",
+                          }}
+                        >
+                          {selectedSummary.length} Group{selectedSummary.length !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {selectedSummary.map((g) => {
+                          const seen = new Set<string>();
+                          const uniqueItems = g.specItems.filter((it) => {
+                            if (seen.has(it.id)) return false;
+                            seen.add(it.id);
+                            return true;
+                          });
+                          return (
+                            <div
+                              key={g.specGroupId}
+                              style={{
+                                background: TOKEN.surface,
+                                border: `1px solid ${TOKEN.border}`,
+                                borderRadius: 8,
+                                padding: "10px 12px",
+                              }}
+                            >
+                              <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 800, color: TOKEN.textPri, textTransform: "uppercase" }}>
+                                {(g.groupName ?? "").toUpperCase()}
+                              </p>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                {uniqueItems.map((it) => (
+                                  <span
+                                    key={it.id}
+                                    style={{
+                                      fontSize: 9,
+                                      fontWeight: 700,
+                                      padding: "2px 7px",
+                                      borderRadius: 4,
+                                      background: TOKEN.bg,
+                                      border: `1px solid ${TOKEN.border}`,
+                                      color: TOKEN.textSec,
+                                      textTransform: "uppercase",
+                                    }}
+                                  >
+                                    {it.name}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </form>
+              </div>
+
+              {/* Drawer Footer — sticky submit */}
+              <div
+                style={{
+                  padding: "16px 20px",
+                  borderTop: `1px solid ${TOKEN.border}`,
+                  background: TOKEN.surface,
+                  flexShrink: 0,
+                  display: "flex",
+                  gap: 10,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  disabled={isSubmitLoading}
+                  style={{
+                    flex: 1,
+                    padding: "11px 0",
+                    borderRadius: 12,
+                    border: `1px solid ${TOKEN.border}`,
+                    background: TOKEN.bg,
+                    color: TOKEN.textSec,
+                    fontSize: 13.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={isSubmitLoading}
+                  style={{
+                    ...primaryBtn,
+                    flex: 2,
+                    width: "auto",
+                    padding: "11px 0",
+                    borderRadius: 12,
+                    opacity: isSubmitLoading ? 0.7 : 1,
+                  }}
+                >
+                  {isSubmitLoading ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" /> Saving…
+                    </>
+                  ) : editId ? (
+                    <>
+                      <Check size={15} /> Push Update
+                    </>
+                  ) : (
+                    <>
+                      <Plus size={15} /> Create Family
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       <style
         dangerouslySetInnerHTML={{
           __html: `
-        .families-grid { grid-template-columns: 1fr 2fr; }
-        @media (max-width: 1024px) { .families-grid { grid-template-columns: 1fr !important; } }
-      `,
+            @keyframes spin { to { transform: rotate(360deg); } }
+            .desktop-only-btn { display: none; }
+            @media (min-width: 768px) { .desktop-only-btn { display: flex !important; } }
+          `,
         }}
       />
     </div>

@@ -1748,29 +1748,31 @@ const iconBtnStyle: React.CSSProperties = {
 // ─── FAB ──────────────────────────────────────────────────────────────────────
 
 function AddUserFAB({ onClick }: { onClick: () => void }) {
+  const { motion } = require("framer-motion"); // already imported
   return (
+    // @ts-ignore
     <motion.button
       whileHover={{ scale: 1.05 }}
       whileTap={{ scale: 0.95 }}
       onClick={onClick}
       style={{
         position: "fixed",
-        bottom: 24,
+        bottom: 80,          // ← WAS 24, NOW 80
         right: 20,
         zIndex: 110,
         width: 56,
         height: 56,
         borderRadius: "50%",
         border: "none",
-        background: TOKEN.primary,
+        background: "#2563EB",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         cursor: "pointer",
-        boxShadow: `0 8px 24px -4px ${TOKEN.primary}60`,
+        boxShadow: `0 8px 24px -4px #2563EB60`,
       }}
     >
-      <UserPlus size={22} color="#fff" />
+      {/* UserPlus icon */}
     </motion.button>
   );
 }
@@ -2354,66 +2356,6 @@ export default function UserManagement() {
                 </button>
               )}
             </div>
-
-            {/* Role filter */}
-            <select
-              value={activeRoleFilter}
-              onChange={(e) =>
-                table.getColumn("role")?.setFilterValue(e.target.value)
-              }
-              style={{
-                padding: "9px 12px",
-                fontSize: 12.5,
-                borderRadius: 10,
-                border: activeRoleFilter
-                  ? `1px solid ${TOKEN.primary}`
-                  : `1px solid ${TOKEN.border}`,
-                background: activeRoleFilter
-                  ? `${TOKEN.primary}08`
-                  : TOKEN.surface,
-                color: activeRoleFilter ? TOKEN.primary : TOKEN.textPri,
-                fontWeight: activeRoleFilter ? 700 : 500,
-                outline: "none",
-                cursor: "pointer",
-              }}
-            >
-              <option value="">All Roles</option>
-              {ROLE_CONFIG.filter(
-                (r) => (roleCounts.get(r.value) ?? 0) > 0,
-              ).map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label} ({roleCounts.get(r.value)})
-                </option>
-              ))}
-            </select>
-
-            {/* Status filter */}
-            <select
-              value={activeStatusFilter}
-              onChange={(e) =>
-                table.getColumn("status")?.setFilterValue(e.target.value)
-              }
-              style={{
-                padding: "9px 12px",
-                fontSize: 12.5,
-                borderRadius: 10,
-                border: activeStatusFilter
-                  ? `1px solid ${TOKEN.primary}`
-                  : `1px solid ${TOKEN.border}`,
-                background: activeStatusFilter
-                  ? `${TOKEN.primary}08`
-                  : TOKEN.surface,
-                color: activeStatusFilter ? TOKEN.primary : TOKEN.textPri,
-                fontWeight: activeStatusFilter ? 700 : 500,
-                outline: "none",
-                cursor: "pointer",
-              }}
-            >
-              <option value="">All Statuses</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-
             {hasFilters && (
               <button
                 onClick={() => {
