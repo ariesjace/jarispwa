@@ -7,6 +7,7 @@ import RecycleBinPage from "@/components/pages/admin/RecycleBin";
 import AuditLogs from "@/components/pages/admin/AuditLogs";
 import { Shield, Trash2, Users, ScrollText } from "lucide-react";
 import { useAuth } from "@/lib/useAuth";
+import UserManagement from "@/components/pages/admin/UserManagement";
 
 function AdminSection({ tab }: { tab: string }) {
   const { user } = useAuth();
@@ -46,11 +47,13 @@ function AdminSection({ tab }: { tab: string }) {
     case "Audit Logs":
       return <AuditLogs />;
     case "User Management":
-      return (
+      return user && user.role === "superadmin" ? (
+        <UserManagement />
+      ) : (
         <EmptyState
-          icon={Users}
-          label="User Management"
-          description="Create and manage admin accounts."
+          icon={Shield}
+          label={tab}
+          description="You do not have permission to access this section."
         />
       );
     default:
