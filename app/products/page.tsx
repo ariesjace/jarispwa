@@ -28,13 +28,13 @@ function ProductsSection({ tab }: { tab: string }) {
   switch (tab) {
     case "All Products":
       return <AllProductsPage />;
+    case "Families":
+      return <FamiliesPage />;
     case "Requests":
       if (!user || !hasAccess(user, "write", "products")) {
         return <EmptyState label="No access" />;
       }
       return <ProductRequestsPage />;
-    case "Families":
-      return <FamiliesPage />;
     default:
       return <EmptyState label={tab} />;
   }

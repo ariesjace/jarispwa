@@ -3,15 +3,10 @@
 import React from "react";
 import { RouteProtection } from "@/components/route-protection";
 import { CMSLayout, TOKEN } from "@/components/layout";
-import RecycleBinPage from "@/components/pages/admin/RecycleBin";
-import AuditLogs from "@/components/pages/admin/AuditLogs";
-import { Shield, Trash2, Users, ScrollText } from "lucide-react";
-import { useAuth } from "@/lib/useAuth";
-import UserManagement from "@/components/pages/admin/UserManagement";
+import { Shield, Trash2, ScrollText } from "lucide-react";
+import UserManagementPage from "@/components/pages/admin/UserManagement";
 
 function AdminSection({ tab }: { tab: string }) {
-  const { user } = useAuth();
-
   const EmptyState = ({
     icon: Icon,
     label,
@@ -42,18 +37,22 @@ function AdminSection({ tab }: { tab: string }) {
   );
 
   switch (tab) {
-    case "Recycle Bin":
-      return <RecycleBinPage />;
-    case "Audit Logs":
-      return <AuditLogs />;
     case "User Management":
-      return user && user.role === "superadmin" ? (
-        <UserManagement />
-      ) : (
+      return <UserManagementPage />;
+    case "Recycle Bin":
+      return (
         <EmptyState
-          icon={Shield}
-          label={tab}
-          description="You do not have permission to access this section."
+          icon={Trash2}
+          label="Recycle Bin"
+          description="Restore or permanently delete removed items."
+        />
+      );
+    case "Audit Logs":
+      return (
+        <EmptyState
+          icon={ScrollText}
+          label="Audit Logs"
+          description="View a full history of system actions."
         />
       );
     default:
