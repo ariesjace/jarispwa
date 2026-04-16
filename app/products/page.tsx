@@ -6,6 +6,7 @@ import { CMSLayout, TOKEN } from "@/components/layout";
 import { Package } from "lucide-react";
 import AllProductsPage from "@/components/pages/products/AllProducts";
 import ProductRequestsPage from "@/components/pages/products/ProductRequests";
+import FamiliesPage from "@/components/pages/products/Families";
 import { useAuth } from "@/lib/useAuth";
 import { hasAccess } from "@/lib/rbac";
 
@@ -32,6 +33,8 @@ function ProductsSection({ tab }: { tab: string }) {
         return <EmptyState label="No access" />;
       }
       return <ProductRequestsPage />;
+    case "Families":
+      return <FamiliesPage />;
     default:
       return <EmptyState label={tab} />;
   }
