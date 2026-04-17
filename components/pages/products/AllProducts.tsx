@@ -8,7 +8,14 @@ import React, {
   useCallback,
   startTransition,
 } from "react";
-import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import {
+  collection,
+  query,
+  orderBy,
+  onSnapshot,
+  addDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { TOKEN } from "@/components/layout/tokens";
 import {
@@ -52,6 +59,11 @@ import {
 import { useProductWorkflow } from "@/lib/useProductWorkflow";
 import { toast } from "sonner";
 import BulkUploader from "@/components/products/BulkUploader";
+import { AddProductFlow } from "@/components/products/AddProductFlow";
+import type {
+  ProductFamily as AddFlowFamily,
+  ProductFormData as AddFlowFormData,
+} from "@/components/products/AddProductFlow";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -226,6 +238,9 @@ export default function AllProductsPage() {
   const [searchInput, setSearchInput] = useState("");
   const [globalFilter, setGlobalFilter] = useState("");
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Ref to the hidden AddProductFlow wrapper — clicked programmatically by the
+  // desktop toolbar button and the mobile FAB.
+  const addFlowTriggerRef = useRef<HTMLDivElement>(null);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearchInput(value);
@@ -238,6 +253,10 @@ export default function AllProductsPage() {
   // ── Bulk Uploader state — controlled so both desktop button and mobile FAB
   //    can open the same dialog instance ──────────────────────────────────────
   const [bulkUploaderOpen, setBulkUploaderOpen] = useState(false);
+
+  // ── Add Product Flow raw data ─────────────────────────────────────────────
+  const [rawFamilyDocs, setRawFamilyDocs] = useState<any[]>([]);
+  const [rawSpecGroupDocs, setRawSpecGroupDocs] = useState<any[]>([]);
 
   // ── Delete / bulk state ─────────────────────────────────────────────────────
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
@@ -280,6 +299,31 @@ export default function AllProductsPage() {
     return unsub;
   }, []);
 
+  // ── Product families & spec groups (for Add Product flow) ────────────────
+  useEffect(() => {
+    const q = query(
+      collection(db, "productfamilies"),
+      orderBy("createdAt", "desc"),
+    );
+    return onSnapshot(q, (snap) => {
+      setRawFamilyDocs(
+        snap.docs.map((d) => ({ id: d.id, ...d.data() })),
+      );
+    });
+  }, []);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, "specs"),
+      orderBy("createdAt", "desc"),
+    );
+    return onSnapshot(q, (snap) => {
+      setRawSpecGroupDocs(
+        snap.docs.map((d) => ({ id: d.id, ...d.data() })),
+      );
+    });
+  }, []);
+
   // ── Derived filter values ────────────────────────────────────────────────
   const uniqueFamilies = useMemo(
     () =>
@@ -313,6 +357,34 @@ export default function AllProductsPage() {
         ),
       ).sort(),
     [data],
+  );
+
+  // ── Flow product families (Firestore → AddProductFlow format) ────────────
+  const flowProductFamilies = useMemo<AddFlowFamily[]>(
+    () =>
+      rawFamilyDocs.map((family) => ({
+        id: family.id,
+        name: family.title ?? "",
+        description: family.description ?? "",
+        availableSpecGroups: (family.specs ?? [])
+          .map((specRef: any) => {
+            const group = rawSpecGroupDocs.find(
+              (g: any) => g.id === specRef.specGroupId,
+            );
+            return {
+              id: specRef.specGroupId,
+              label: group?.name ?? specRef.specGroupId,
+              items: (specRef.specItems ?? []).map((item: any) => ({
+                id: item.id,
+                label: item.name,
+                type: "text" as const,
+                required: false,
+              })),
+            };
+          })
+          .filter((g: any) => g.items.length > 0),
+      })),
+    [rawFamilyDocs, rawSpecGroupDocs],
   );
 
   // ── Columns ─────────────────────────────────────────────────────────────────
@@ -595,6 +667,67 @@ export default function AllProductsPage() {
       );
     else toast.error(`${succeeded} deleted, ${failed} failed.`);
   }, [selectedRows, submitProductDelete, table]);
+
+  // ── Add Product submit ───────────────────────────────────────────────────────
+  const handleAddProductSubmit = useCallback(
+    async (formData: AddFlowFormData) => {
+      const CLOUDINARY_CLOUD_NAME = "dvmpn8mjh";
+      const CLOUDINARY_UPLOAD_PRESET = "taskflow_preset";
+
+      try {
+        // Resolve family title for the products collection
+        const family = rawFamilyDocs.find(
+          (f) => f.id === formData.productFamilyId,
+        );
+        const productFamily = (
+          family?.title ?? formData.productFamilyId
+        ).toUpperCase();
+
+        // Upload images to Cloudinary
+        const uploadedUrls: string[] = [];
+        for (const file of formData.images) {
+          try {
+            const fd = new FormData();
+            fd.append("file", file);
+            fd.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+            const res = await fetch(
+              `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+              { method: "POST", body: fd },
+            );
+            const json = await res.json();
+            if (json?.secure_url) uploadedUrls.push(json.secure_url);
+          } catch {
+            // Skip individual upload failures; continue with others
+          }
+        }
+
+        // itemCodes: Record<string,string> → filter empty values, then save directly
+        const itemCodesObj = Object.fromEntries(
+          Object.entries(formData.itemCodes || {}).filter(([, v]) => v.trim()),
+        );
+
+        await addDoc(collection(db, "products"), {
+          name: formData.itemDescription,
+          itemDescription: formData.itemDescription,
+          productFamily,
+          productClass: formData.productClass,
+          itemCodes: itemCodesObj,
+          specifications: formData.specValues,
+          mainImage: uploadedUrls[0] ?? "",
+          rawImage: uploadedUrls,
+          websites: [],
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        toast.success("Product created successfully");
+      } catch (err: any) {
+        toast.error(err?.message ?? "Failed to create product");
+        throw err; // re-throw so AddProductFlow stays on preview step
+      }
+    },
+    [rawFamilyDocs],
+  );
 
   // ── Long-press to select (mobile) ───────────────────────────────────────────
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1035,7 +1168,14 @@ export default function AllProductsPage() {
                     <Upload size={15} /> Bulk Upload
                   </button>
 
-                  <button style={primaryBtnStyle}>
+                  <button
+                    style={primaryBtnStyle}
+                    onClick={() =>
+                      addFlowTriggerRef.current
+                        ?.querySelector("button")
+                        ?.click()
+                    }
+                  >
                     <Plus size={15} /> Add Product
                   </button>
                 </>
@@ -1527,7 +1667,13 @@ export default function AllProductsPage() {
       {isMobile && !isBulk && (
         <FAB
           actions={[
-            { label: "New Product", Icon: Plus, color: TOKEN.primary },
+            {
+              label: "New Product",
+              Icon: Plus,
+              color: TOKEN.primary,
+              onClick: () =>
+                addFlowTriggerRef.current?.querySelector("button")?.click(),
+            },
             {
               label: "Bulk Import",
               Icon: Upload,
@@ -1895,6 +2041,20 @@ export default function AllProductsPage() {
           </div>
         </>
       )}
+
+      {/* ── Add Product Flow ── Hidden instance; triggered programmatically
+           by the desktop toolbar button and mobile FAB via addFlowTriggerRef */}
+      <div
+        ref={addFlowTriggerRef}
+        style={{ position: "fixed", top: -9999, left: -9999, zIndex: 9999 }}
+        aria-hidden="true"
+      >
+        <AddProductFlow
+          productFamilies={flowProductFamilies}
+          onSubmit={handleAddProductSubmit}
+          onCancel={() => {}}
+        />
+      </div>
 
       {/* ── Delete dialogs ── */}
       <DeleteToRecycleBinDialog

@@ -4,11 +4,9 @@ import { Toaster } from "sonner";
 import ServiceWorkerRegister from "@/app/components/ServiceWorkerRegister";
 import { AuthProvider } from "@/lib/useAuth";
 import "./globals.css";
+import { cn } from "@/lib/utils";
 
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-sans",
-});
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -50,7 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${jetbrainsMono.variable} ${geistSans.variable} ${geistMono.variable} antialiased`}
+      className={cn("antialiased", geistSans.variable, geistMono.variable, "font-sans", geist.variable)}
     >
       <head>
         <link rel="manifest" href="/manifest.json" />
