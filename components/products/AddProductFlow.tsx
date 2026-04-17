@@ -6,6 +6,7 @@ import { ProductFamilyModal } from "./ProductFamilyModal";
 import { ProductClassSelection } from "./ProductClassSelection";
 import { ProductFormSheet } from "./ProductFormSheet";
 import { TDSPreview } from "./TDSPreview";
+import type { ItemCodes } from "@/types/product";
 
 export type ProductClass = "standard" | "nonstandard" | "spf" | "usl";
 
@@ -34,7 +35,8 @@ export interface ProductFormData {
   productFamilyId: string;
   productClass: ProductClass;
   itemDescription: string;
-  itemCodes: Record<string, string>; // { LIT: "", ECO: "", ZUM: "", LUM: "" }
+  /** Multi-brand item codes — stored as { ECOSHIFT?: string; LIT?: string; LUMERA?: string; OKO?: string; ZUMTOBEL?: string } */
+  itemCodes: ItemCodes;
   selectedSpecGroups: string[];
   specValues: Record<string, any>;
   images: File[];
@@ -61,7 +63,7 @@ export function AddProductFlow({
 }: AddProductFlowProps) {
   const [currentStep, setCurrentStep] = useState<FlowStep>("idle");
   const [formData, setFormData] = useState<Partial<ProductFormData>>({
-    itemCodes: {} as Record<string, string>,
+    itemCodes: {} as ItemCodes,
     selectedSpecGroups: [],
     specValues: {},
     images: [],
@@ -69,18 +71,15 @@ export function AddProductFlow({
 
   // Get the selected product family
   const selectedFamily = productFamilies.find(
-    (f) => f.id === formData.productFamilyId
+    (f) => f.id === formData.productFamilyId,
   );
 
   // Get filtered spec groups based on selection
   const activeSpecGroups = selectedFamily?.availableSpecGroups.filter((group) =>
-    formData.selectedSpecGroups?.includes(group.id)
+    formData.selectedSpecGroups?.includes(group.id),
   );
 
-  const handleFamilySelect = (
-    familyId: string,
-    selectedGroups: string[]
-  ) => {
+  const handleFamilySelect = (familyId: string, selectedGroups: string[]) => {
     setFormData((prev) => ({
       ...prev,
       productFamilyId: familyId,
@@ -90,18 +89,12 @@ export function AddProductFlow({
   };
 
   const handleClassSelect = (productClass: ProductClass) => {
-    setFormData((prev) => ({
-      ...prev,
-      productClass,
-    }));
+    setFormData((prev) => ({ ...prev, productClass }));
     setCurrentStep("form");
   };
 
   const handleFormSubmit = (data: Partial<ProductFormData>) => {
-    setFormData((prev) => ({
-      ...prev,
-      ...data,
-    }));
+    setFormData((prev) => ({ ...prev, ...data }));
     setCurrentStep("preview");
   };
 
@@ -130,7 +123,7 @@ export function AddProductFlow({
 
   const handleReset = () => {
     setFormData({
-      itemCodes: {} as Record<string, string>,
+      itemCodes: {} as ItemCodes,
       selectedSpecGroups: [],
       specValues: {},
       images: [],
@@ -146,10 +139,17 @@ export function AddProductFlow({
         <button
           onClick={() => setCurrentStep("family-selection")}
           style={{
-            display: "inline-flex", alignItems: "center", gap: 8,
-            padding: "10px 20px", borderRadius: 12, border: "none",
-            background: TOKEN.primary, color: "#fff",
-            fontSize: 14, fontWeight: 600, cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 20px",
+            borderRadius: 12,
+            border: "none",
+            background: TOKEN.primary,
+            color: "#fff",
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: "pointer",
           }}
         >
           Add New Product
