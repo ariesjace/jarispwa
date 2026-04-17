@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useProductWorkflow } from "@/lib/useProductWorkflow";
 import { toast } from "sonner";
+import BulkUploader from "@/components/products/BulkUploader";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -205,8 +206,6 @@ const pageBtnStyle: React.CSSProperties = {
   justifyContent: "center",
 };
 
-// ─── Constant: swipe threshold ────────────────────────────────────────────────
-
 const SWIPE_DELETE_THRESHOLD = 90;
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -224,25 +223,21 @@ export default function AllProductsPage() {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
-  // ── OPTIMIZED: split input state from table filter state ─────────────────
-  // searchInput updates immediately (what the user sees in the box).
-  // globalFilter is debounced 300 ms and drives the actual TanStack filter.
-  // This keeps the input snappy while avoiding re-filtering on every keystroke.
   const [searchInput, setSearchInput] = useState("");
   const [globalFilter, setGlobalFilter] = useState("");
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearchInput(value);
-    if (searchDebounceRef.current) {
-      clearTimeout(searchDebounceRef.current);
-    }
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     searchDebounceRef.current = setTimeout(() => {
-      // startTransition marks the filter update as non-urgent so React can
-      // batch it with any other pending work rather than blocking the input.
       startTransition(() => setGlobalFilter(value));
     }, 300);
   }, []);
+
+  // ── Bulk Uploader state — controlled so both desktop button and mobile FAB
+  //    can open the same dialog instance ──────────────────────────────────────
+  const [bulkUploaderOpen, setBulkUploaderOpen] = useState(false);
 
   // ── Delete / bulk state ─────────────────────────────────────────────────────
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
@@ -271,10 +266,7 @@ export default function AllProductsPage() {
     return () => window.removeEventListener("resize", fn);
   }, []);
 
-  // ── Firestore — SIMPLIFIED: one query instead of two ───────────────────────
-  // Previously used two parallel queries (websites array-contains-any + websites==[])
-  // and merged them client-side. For a CMS with hundreds/low-thousands of products
-  // this single ordered query is simpler, faster to write, and easier to maintain.
+  // ── Firestore ───────────────────────────────────────────────────────────────
   useEffect(() => {
     const q = query(collection(db, "products"), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(
@@ -288,7 +280,7 @@ export default function AllProductsPage() {
     return unsub;
   }, []);
 
-  // ── Derived filter values (memoised) ─────────────────────────────────────
+  // ── Derived filter values ────────────────────────────────────────────────
   const uniqueFamilies = useMemo(
     () =>
       Array.from(
@@ -323,7 +315,7 @@ export default function AllProductsPage() {
     [data],
   );
 
-  // ── Columns (stable reference — no deps that change on every render) ───────
+  // ── Columns ─────────────────────────────────────────────────────────────────
   const columns = useMemo<ColumnDef<any>[]>(
     () => [
       {
@@ -1027,14 +1019,22 @@ export default function AllProductsPage() {
                   />
                 )}
               </button>
+
+              {/* ── Desktop toolbar: Bulk Download TDS | Bulk Upload | Add Product ── */}
               {!isMobile && (
                 <>
                   <button style={outlineBtnStyle}>
                     <Download size={15} /> Bulk Download TDS
                   </button>
-                  <button style={outlineBtnStyle}>
+
+                  {/* Bulk Upload — opens the shared BulkUploader dialog */}
+                  <button
+                    style={outlineBtnStyle}
+                    onClick={() => setBulkUploaderOpen(true)}
+                  >
                     <Upload size={15} /> Bulk Upload
                   </button>
+
                   <button style={primaryBtnStyle}>
                     <Plus size={15} /> Add Product
                   </button>
@@ -1522,11 +1522,18 @@ export default function AllProductsPage() {
         })}
       </div>
 
+      {/* ── Mobile FAB — shown when not in bulk-select mode ──────────────────
+           "Bulk Import" onClick opens the shared BulkUploader dialog         */}
       {isMobile && !isBulk && (
         <FAB
           actions={[
             { label: "New Product", Icon: Plus, color: TOKEN.primary },
-            { label: "Bulk Import", Icon: Upload, color: TOKEN.secondary },
+            {
+              label: "Bulk Import",
+              Icon: Upload,
+              color: TOKEN.secondary,
+              onClick: () => setBulkUploaderOpen(true),
+            },
             { label: "Bulk Download TDS", Icon: Download, color: TOKEN.accent },
           ]}
         />
@@ -1762,7 +1769,6 @@ export default function AllProductsPage() {
                 </div>
               )}
 
-              {/* Family / Class / Usage value lists */}
               {(["family", "class", "usage"] as const).map((cat) => {
                 if (filterCategory !== cat) return null;
                 const options =
@@ -1905,6 +1911,18 @@ export default function AllProductsPage() {
         count={selectedRows.length}
         onConfirm={handleExecuteBulkDelete}
         requestMode={!canVerifyProducts()}
+      />
+
+      {/* ── BulkUploader — single instance, driven by bulkUploaderOpen state ──
+           hideTrigger=true because we render our own buttons above.
+           open / onOpenChange wire the desktop button + mobile FAB together.  */}
+      <BulkUploader
+        hideTrigger
+        open={bulkUploaderOpen}
+        onOpenChange={setBulkUploaderOpen}
+        onUploadComplete={() => {
+          /* Firestore real-time listener in this component auto-refreshes data */
+        }}
       />
 
       <style

@@ -1,16 +1,17 @@
 "use client";
 
 /**
- * components/product-forms/bulk-uploader.tsx
+ * components/products/BulkUploader.tsx
  *
  * Excel-only bulk product importer.
- *  - Column-header-based field detection (not fixed positions)
- *  - Supports new `itemCodes` schema ({ ECOSHIFT?, LIT?, LUMERA?, OKO?, ZUMTOBEL? })
- *  - Legacy litItemCode / ecoItemCode columns still recognised and migrated
- *  - Duplicate check uses itemCodes (new schema + legacy fields)
- *  - TDS generated as plain tabular output (includeBrandAssets = false)
- *  - All Firestore writes and audit trails preserved
- *  - Styled with TOKEN design tokens; terminal UI preserved
+ *
+ * CONTROLLED MODE (used by AllProducts):
+ *   Pass `open`, `onOpenChange`, and `hideTrigger` props so the parent can
+ *   drive the dialog open/close state (desktop button + mobile FAB).
+ *
+ * UNCONTROLLED MODE (standalone usage):
+ *   Omit those props – the component manages its own open state and renders
+ *   its own trigger button.
  */
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
@@ -137,16 +138,16 @@ const IMG_HEADER_TO_FIELD: Record<string, keyof ParsedProduct> = {
 const ITEM_CODE_HEADER_MAP: Record<string, ItemCodeBrand> = {
   "ECOSHIFT ITEM CODE": "ECOSHIFT",
   "ECO ITEM CODE": "ECOSHIFT",
-  "ECOITEMCODE": "ECOSHIFT",
+  ECOITEMCODE: "ECOSHIFT",
   "LIT ITEM CODE": "LIT",
-  "LITITEMCODE": "LIT",
+  LITITEMCODE: "LIT",
   "LIT CODE": "LIT",
   "LUMERA ITEM CODE": "LUMERA",
-  "LUMERAITEMCODE": "LUMERA",
+  LUMERAITEMCODE: "LUMERA",
   "OKO ITEM CODE": "OKO",
-  "OKOITEMCODE": "OKO",
+  OKOITEMCODE: "OKO",
   "ZUMTOBEL ITEM CODE": "ZUMTOBEL",
-  "ZUMTOBELITEMCODE": "ZUMTOBEL",
+  ZUMTOBELITEMCODE: "ZUMTOBEL",
   "ECO CODE": "ECOSHIFT",
   "ECOSHIFT CODE": "ECOSHIFT",
   "LIT BRAND CODE": "LIT",
@@ -171,7 +172,10 @@ function parseProductUsage(raw: string): string[] {
 
 function parseGalleryUrls(raw: string): string[] {
   if (!raw) return [];
-  return raw.split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
+  return raw
+    .split(/[,\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 function cellStr(v: unknown): string {
@@ -180,7 +184,9 @@ function cellStr(v: unknown): string {
     return String((v as any).text).trim();
   if (typeof v === "object" && "result" in (v as any))
     return String((v as any).result).trim();
-  return String(v).replace(/[\r\n]+/g, " ").trim();
+  return String(v)
+    .replace(/[\r\n]+/g, " ")
+    .trim();
 }
 
 function buildGroupMap(groupRow: (string | null)[]): Record<number, string> {
@@ -252,7 +258,10 @@ async function parseWorkbook(file: File): Promise<{
 
   headerRow.forEach((h, i) => {
     if (!h) return;
-    const upper = h.replace(/[\r\n\t]+/g, " ").trim().toUpperCase();
+    const upper = h
+      .replace(/[\r\n\t]+/g, " ")
+      .trim()
+      .toUpperCase();
 
     const itemCodeBrand = ITEM_CODE_HEADER_MAP[upper];
     if (itemCodeBrand) {
@@ -267,9 +276,17 @@ async function parseWorkbook(file: File): Promise<{
       return;
     }
 
-    if (upper === "ITEM DESCRIPTION" || upper === "ITEMDESCRIPTION" || upper === "DESCRIPTION") {
+    if (
+      upper === "ITEM DESCRIPTION" ||
+      upper === "ITEMDESCRIPTION" ||
+      upper === "DESCRIPTION"
+    ) {
       itemDescriptionCol = i;
-    } else if (upper === "PRODUCT USAGE" || upper === "USAGE" || upper === "PRODUCTUSAGE") {
+    } else if (
+      upper === "PRODUCT USAGE" ||
+      upper === "USAGE" ||
+      upper === "PRODUCTUSAGE"
+    ) {
       productUsageCol = i;
     } else if (
       upper === "PRODUCT FAMILY" ||
@@ -278,7 +295,11 @@ async function parseWorkbook(file: File): Promise<{
       upper === "CATEGORY"
     ) {
       productFamilyCol = i;
-    } else if (upper === "PRODUCT CLASS" || upper === "PRODUCTCLASS" || upper === "CLASS") {
+    } else if (
+      upper === "PRODUCT CLASS" ||
+      upper === "PRODUCTCLASS" ||
+      upper === "CLASS"
+    ) {
       productClassCol = i;
     } else if (upper === "BRAND") {
       brandCol = i;
@@ -324,7 +345,8 @@ async function parseWorkbook(file: File): Promise<{
     if (!row || row.every((c) => c == null || c === "")) continue;
 
     const g = (col: number) => (col >= 0 ? (row[col]?.trim() ?? "") : "");
-    const itemDescription = itemDescriptionCol >= 0 ? g(itemDescriptionCol) : "";
+    const itemDescription =
+      itemDescriptionCol >= 0 ? g(itemDescriptionCol) : "";
 
     const itemCodes: ItemCodes = {};
     ALL_BRANDS.forEach((brand) => {
@@ -357,7 +379,9 @@ async function parseWorkbook(file: File): Promise<{
     const litItemCode = itemCodes.LIT ?? "";
 
     const rowBrandRaw = brandCol >= 0 ? g(brandCol) : "";
-    const brand = normaliseBrand(rowBrandRaw || (litItemCode ? "LIT" : "ECOSHIFT"));
+    const brand = normaliseBrand(
+      rowBrandRaw || (litItemCode ? "LIT" : "ECOSHIFT"),
+    );
 
     const specsByGroup: Record<string, { label: string; value: string }[]> = {};
     for (const [colStr, label] of Object.entries(specLabelMap)) {
@@ -384,8 +408,12 @@ async function parseWorkbook(file: File): Promise<{
       productFamily:
         (productFamilyCol >= 0 ? g(productFamilyCol) : "").toUpperCase() ||
         "UNCATEGORISED",
-      productClass: normaliseProductClass(productClassCol >= 0 ? g(productClassCol) : ""),
-      productUsage: parseProductUsage(productUsageCol >= 0 ? g(productUsageCol) : ""),
+      productClass: normaliseProductClass(
+        productClassCol >= 0 ? g(productClassCol) : "",
+      ),
+      productUsage: parseProductUsage(
+        productUsageCol >= 0 ? g(productUsageCol) : "",
+      ),
       brand,
       mainImageUrl: imgVals.mainImageUrl ?? "",
       rawImageUrl: imgVals.rawImageUrl ?? "",
@@ -430,11 +458,16 @@ async function uploadUrlToCloudinary(url: string): Promise<string> {
     { method: "POST", body: fd },
   );
   if (!res.ok)
-    throw new Error(`Cloudinary upload failed (${res.status}) for: ${resolved}`);
+    throw new Error(
+      `Cloudinary upload failed (${res.status}) for: ${resolved}`,
+    );
   return (await res.json()).secure_url as string;
 }
 
-async function safeUploadUrl(url: string, log: (m: string) => void): Promise<string> {
+async function safeUploadUrl(
+  url: string,
+  log: (m: string) => void,
+): Promise<string> {
   if (!url) return "";
   try {
     return await uploadUrlToCloudinary(url);
@@ -452,7 +485,9 @@ async function uploadManyUrls(
   const out: string[] = new Array(urls.length).fill("");
   for (let i = 0; i < urls.length; i += concurrency) {
     const chunk = urls.slice(i, i + concurrency);
-    const settled = await Promise.allSettled(chunk.map((u) => safeUploadUrl(u, log)));
+    const settled = await Promise.allSettled(
+      chunk.map((u) => safeUploadUrl(u, log)),
+    );
     settled.forEach((r, j) => {
       if (r.status === "fulfilled") out[i + j] = r.value;
     });
@@ -462,12 +497,21 @@ async function uploadManyUrls(
 
 // ─── Firestore helpers ────────────────────────────────────────────────────────
 
-async function findDoc(col: string, field: string, value: string): Promise<string | null> {
-  const snap = await getDocs(query(collection(db, col), where(field, "==", value)));
+async function findDoc(
+  col: string,
+  field: string,
+  value: string,
+): Promise<string | null> {
+  const snap = await getDocs(
+    query(collection(db, col), where(field, "==", value)),
+  );
   return snap.empty ? null : snap.docs[0].id;
 }
 
-async function upsertSpecGroup(groupName: string, labels: string[]): Promise<string> {
+async function upsertSpecGroup(
+  groupName: string,
+  labels: string[],
+): Promise<string> {
   const existingId = await findDoc("specs", "name", groupName);
   if (existingId) {
     const snap = await getDocs(
@@ -515,7 +559,9 @@ async function upsertProductFamily(
     const existing = snap.docs[0];
     const data = existing.data() as any;
     const existingSpecs: string[] = data.specifications ?? [];
-    const mergedGroupIds = Array.from(new Set<string>([...existingSpecs, ...specGroupIds]));
+    const mergedGroupIds = Array.from(
+      new Set<string>([...existingSpecs, ...specGroupIds]),
+    );
 
     const existingSpecsArray: {
       specGroupId: string;
@@ -536,8 +582,13 @@ async function upsertProductFamily(
     for (const groupId of specGroupIds) {
       const labelsSet = specItemsByGroupId[groupId];
       if (!labelsSet || labelsSet.size === 0) continue;
-      const existingGroup = specsMap.get(groupId) ?? { specGroupId: groupId, specItems: [] };
-      const existingItemIds = new Set(existingGroup.specItems.map((it) => it.id));
+      const existingGroup = specsMap.get(groupId) ?? {
+        specGroupId: groupId,
+        specItems: [],
+      };
+      const existingItemIds = new Set(
+        existingGroup.specItems.map((it) => it.id),
+      );
       for (const rawLabel of labelsSet) {
         const label = rawLabel.toUpperCase().trim();
         if (!label) continue;
@@ -557,7 +608,10 @@ async function upsertProductFamily(
     return existingId;
   }
 
-  const specsArray: { specGroupId: string; specItems: { id: string; name: string }[] }[] = [];
+  const specsArray: {
+    specGroupId: string;
+    specItems: { id: string; name: string }[];
+  }[] = [];
   for (const groupId of specGroupIds) {
     const labelsSet = specItemsByGroupId[groupId];
     if (!labelsSet || labelsSet.size === 0) continue;
@@ -567,7 +621,8 @@ async function upsertProductFamily(
       if (!label) continue;
       items.push({ id: buildSpecItemId(groupId, label), name: label });
     }
-    if (items.length > 0) specsArray.push({ specGroupId: groupId, specItems: items });
+    if (items.length > 0)
+      specsArray.push({ specGroupId: groupId, specItems: items });
   }
 
   const ref = await addDoc(collection(db, "productfamilies"), {
@@ -586,34 +641,49 @@ async function upsertProductFamily(
 
 // ─── Duplicate check ──────────────────────────────────────────────────────────
 
-async function checkDuplicate(itemCodes: ItemCodes): Promise<{ isDuplicate: boolean; reason: string }> {
+async function checkDuplicate(
+  itemCodes: ItemCodes,
+): Promise<{ isDuplicate: boolean; reason: string }> {
   const filled = getFilledItemCodes(itemCodes);
   if (filled.length === 0) return { isDuplicate: false, reason: "" };
 
   for (const { brand, code } of filled) {
     const fieldToCheck =
-      brand === "ECOSHIFT" ? "ecoItemCode" : brand === "LIT" ? "litItemCode" : null;
+      brand === "ECOSHIFT"
+        ? "ecoItemCode"
+        : brand === "LIT"
+          ? "litItemCode"
+          : null;
 
     const snapNew = await getDocs(
-      query(collection(db, "products"), where(`itemCodes.${brand}`, "==", code)),
+      query(
+        collection(db, "products"),
+        where(`itemCodes.${brand}`, "==", code),
+      ),
     );
-    if (!snapNew.empty) return { isDuplicate: true, reason: `${brand} item code "${code}"` };
+    if (!snapNew.empty)
+      return {
+        isDuplicate: true,
+        reason: `${brand} item code "${code}"`,
+      };
 
     if (fieldToCheck) {
       const snapLegacy = await getDocs(
         query(collection(db, "products"), where(fieldToCheck, "==", code)),
       );
       if (!snapLegacy.empty)
-        return { isDuplicate: true, reason: `${brand} item code "${code}" (legacy)` };
+        return {
+          isDuplicate: true,
+          reason: `${brand} item code "${code}" (legacy)`,
+        };
     }
   }
 
   return { isDuplicate: false, reason: "" };
 }
 
-// ─── TOKEN-styled sub-components ─────────────────────────────────────────────
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
-// Tab button
 function TabBtn({
   active,
   onClick,
@@ -664,7 +734,6 @@ function TabBtn({
   );
 }
 
-// Files tab panel
 function FilesPanel({
   fileSummary,
 }: {
@@ -678,7 +747,15 @@ function FilesPanel({
   }[];
 }) {
   return (
-    <div style={{ height: "100%", overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
+    <div
+      style={{
+        height: "100%",
+        overflowY: "auto",
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+      }}
+    >
       {fileSummary.map((file, idx) => (
         <div
           key={idx}
@@ -689,13 +766,39 @@ function FilesPanel({
             padding: "14px 16px",
           }}
         >
-          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: 8,
+              marginBottom: 10,
+            }}
+          >
             <div style={{ minWidth: 0, flex: 1 }}>
-              <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: TOKEN.textPri, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: TOKEN.textPri,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
                 {file.name}
               </p>
-              <p style={{ margin: "2px 0 0", fontSize: 10, color: TOKEN.textSec, fontFamily: "monospace" }}>
-                Sheet: <span style={{ color: TOKEN.textPri }}>{file.sheetName}</span>
+              <p
+                style={{
+                  margin: "2px 0 0",
+                  fontSize: 10,
+                  color: TOKEN.textSec,
+                  fontFamily: "monospace",
+                }}
+              >
+                Sheet:{" "}
+                <span style={{ color: TOKEN.textPri }}>{file.sheetName}</span>
               </p>
             </div>
             <span
@@ -715,14 +818,23 @@ function FilesPanel({
             </span>
           </div>
 
-          {/* Brand counts */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              marginBottom: 8,
+            }}
+          >
             {(ALL_BRANDS as ItemCodeBrand[])
               .filter((b) => (file.brandCounts[b] ?? 0) > 0)
               .map((brand) => {
                 const config = ITEM_CODE_BRAND_CONFIG[brand];
                 return (
-                  <div key={brand} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <div
+                    key={brand}
+                    style={{ display: "flex", alignItems: "center", gap: 4 }}
+                  >
                     <span
                       className={`${config.badgeClass} border`}
                       style={{
@@ -735,17 +847,28 @@ function FilesPanel({
                         fontWeight: 700,
                       }}
                     >
-                      <span className={config.dotClass} style={{ width: 6, height: 6, borderRadius: "50%" }} />
+                      <span
+                        className={config.dotClass}
+                        style={{ width: 6, height: 6, borderRadius: "50%" }}
+                      />
                       {config.label}
                     </span>
-                    <span style={{ fontSize: 10, color: TOKEN.textSec }}>{file.brandCounts[brand]}</span>
+                    <span style={{ fontSize: 10, color: TOKEN.textSec }}>
+                      {file.brandCounts[brand]}
+                    </span>
                   </div>
                 );
               })}
           </div>
 
-          {/* Families */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 5,
+              marginBottom: 8,
+            }}
+          >
             {Array.from(file.families).map((f) => (
               <span
                 key={f}
@@ -769,9 +892,19 @@ function FilesPanel({
               {file.warnings.map((w, wi) => (
                 <p
                   key={wi}
-                  style={{ margin: 0, fontSize: 10, color: "#d97706", display: "flex", alignItems: "flex-start", gap: 5 }}
+                  style={{
+                    margin: 0,
+                    fontSize: 10,
+                    color: "#d97706",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 5,
+                  }}
                 >
-                  <AlertCircle size={11} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <AlertCircle
+                    size={11}
+                    style={{ flexShrink: 0, marginTop: 1 }}
+                  />
                   {w}
                 </p>
               ))}
@@ -783,7 +916,6 @@ function FilesPanel({
   );
 }
 
-// Categories tab panel
 function CategoriesPanel({
   categorySummary,
   allProducts,
@@ -792,10 +924,20 @@ function CategoriesPanel({
   allProducts: ParsedProduct[];
 }) {
   return (
-    <div style={{ height: "100%", overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
+    <div
+      style={{
+        height: "100%",
+        overflowY: "auto",
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+      }}
+    >
       {Object.entries(categorySummary).map(([family, count]) => {
         const specGroups = new Set(
-          allProducts.filter((p) => p.productFamily === family).flatMap((p) => Object.keys(p.specs)),
+          allProducts
+            .filter((p) => p.productFamily === family)
+            .flatMap((p) => Object.keys(p.specs)),
         );
         return (
           <div
@@ -807,8 +949,19 @@ function CategoriesPanel({
               padding: "12px 14px",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: TOKEN.textPri }}>{family}</span>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 8,
+              }}
+            >
+              <span
+                style={{ fontSize: 13, fontWeight: 600, color: TOKEN.textPri }}
+              >
+                {family}
+              </span>
               <span
                 style={{
                   fontSize: 10,
@@ -848,8 +1001,11 @@ function CategoriesPanel({
   );
 }
 
-// Products table tab panel
-function ProductsPanel({ uploadedFiles }: { uploadedFiles: { name: string; products: ParsedProduct[] }[] }) {
+function ProductsPanel({
+  uploadedFiles,
+}: {
+  uploadedFiles: { name: string; products: ParsedProduct[] }[];
+}) {
   return (
     <div
       style={{
@@ -861,7 +1017,6 @@ function ProductsPanel({ uploadedFiles }: { uploadedFiles: { name: string; produ
         overflow: "hidden",
       }}
     >
-      {/* Table header */}
       <div
         style={{
           display: "grid",
@@ -883,7 +1038,6 @@ function ProductsPanel({ uploadedFiles }: { uploadedFiles: { name: string; produ
         <span style={{ textAlign: "center" }}>Img</span>
       </div>
 
-      {/* Table body */}
       <div style={{ flex: 1, overflowY: "auto" }}>
         {uploadedFiles.map((file, fileIdx) =>
           file.products.map((p, prodIdx) => (
@@ -925,7 +1079,11 @@ function ProductsPanel({ uploadedFiles }: { uploadedFiles: { name: string; produ
                 {p.productFamily}
               </span>
               <div style={{ paddingRight: 8 }}>
-                <ItemCodesDisplay itemCodes={p.itemCodes} size="sm" maxVisible={2} />
+                <ItemCodesDisplay
+                  itemCodes={p.itemCodes}
+                  size="sm"
+                  maxVisible={2}
+                />
               </div>
               <span style={{ display: "flex", justifyContent: "center" }}>
                 {p.mainImageUrl ? (
@@ -942,13 +1100,56 @@ function ProductsPanel({ uploadedFiles }: { uploadedFiles: { name: string; produ
   );
 }
 
+// ─── Props ────────────────────────────────────────────────────────────────────
+
+export interface BulkUploaderProps {
+  onUploadComplete?: () => void;
+  /**
+   * CONTROLLED MODE — pass these three props together to let a parent
+   * (e.g. AllProducts) drive the dialog open/close state.
+   *
+   * When omitted the component manages its own state and shows its own
+   * trigger button (original standalone behaviour).
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Hide the built-in trigger button when the parent controls open state. */
+  hideTrigger?: boolean;
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: () => void }) {
-  const [open, setOpen] = useState(false);
+export default function BulkUploader({
+  onUploadComplete,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  hideTrigger = false,
+}: BulkUploaderProps) {
+  // ── Open state — supports both controlled and uncontrolled modes ───────────
+  const isControlled = controlledOpen !== undefined;
+  const [internalOpen, setInternalOpen] = useState(false);
+
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = useCallback(
+    (value: boolean) => {
+      if (isControlled) {
+        controlledOnOpenChange?.(value);
+      } else {
+        setInternalOpen(value);
+      }
+    },
+    [isControlled, controlledOnOpenChange],
+  );
+
+  // ── Internal component state ───────────────────────────────────────────────
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [stats, setStats] = useState<ImportStats>({ total: 0, success: 0, failed: 0, skipped: 0 });
+  const [stats, setStats] = useState<ImportStats>({
+    total: 0,
+    success: 0,
+    failed: 0,
+    skipped: 0,
+  });
   const [logs, setLogs] = useState<{ type: LogType; msg: string }[]>([]);
   const [currentItem, setCurrentItem] = useState("");
   const [step, setStep] = useState<Step>("idle");
@@ -977,7 +1178,7 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
     ]);
   }, []);
 
-  // ── File drop ────────────────────────────────────────────────────────────────
+  // ── File drop ─────────────────────────────────────────────────────────────
 
   const handleFileDrop = useCallback(
     async (files: File[]) => {
@@ -986,8 +1187,15 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
       const parsed: typeof uploadedFiles = [];
       for (const file of files) {
         try {
-          const { sheetName, products, warnings, brandCounts } = await parseWorkbook(file);
-          parsed.push({ name: file.name, sheetName, products, warnings, brandCounts });
+          const { sheetName, products, warnings, brandCounts } =
+            await parseWorkbook(file);
+          parsed.push({
+            name: file.name,
+            sheetName,
+            products,
+            warnings,
+            brandCounts,
+          });
           const brandSummary = (ALL_BRANDS as ItemCodeBrand[])
             .filter((b) => brandCounts[b] > 0)
             .map((b) => `${ITEM_CODE_BRAND_CONFIG[b].label}: ${brandCounts[b]}`)
@@ -1009,7 +1217,10 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
       setActiveTab("files");
       setStep("preview");
       const total = parsed.reduce((s, f) => s + f.products.length, 0);
-      addLog("info", `✅ Parsed ${parsed.length} file(s) — ${total} valid products`);
+      addLog(
+        "info",
+        `✅ Parsed ${parsed.length} file(s) — ${total} valid products`,
+      );
     },
     [addLog],
   );
@@ -1017,17 +1228,22 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: handleFileDrop,
     accept: {
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [
+        ".xlsx",
+      ],
     },
     multiple: true,
     disabled: step !== "idle" || importing,
   });
 
-  // ── Import ────────────────────────────────────────────────────────────────────
+  // ── Import ────────────────────────────────────────────────────────────────
 
   const handleCancel = () => {
     cancelledRef.current = true;
-    addLog("warn", "⚠️  Cancellation requested — stopping after current item...");
+    addLog(
+      "warn",
+      "⚠️  Cancellation requested — stopping after current item...",
+    );
   };
 
   const runExcelImport = async () => {
@@ -1038,10 +1254,17 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
     setImporting(true);
     setStep("importing");
     setProgress(0);
-    setStats({ total: allProducts.length, success: 0, failed: 0, skipped: 0 });
-    addLog("info", `🚀 Starting JARIS import of ${allProducts.length} products from ${uploadedFiles.length} file(s)...`);
+    setStats({
+      total: allProducts.length,
+      success: 0,
+      failed: 0,
+      skipped: 0,
+    });
+    addLog(
+      "info",
+      `🚀 Starting JARIS import of ${allProducts.length} products from ${uploadedFiles.length} file(s)...`,
+    );
 
-    // Phase 1: Upsert spec groups
     const allSpecGroups: Record<string, Set<string>> = {};
     const familyToGroups: Record<string, Set<string>> = {};
     const familySpecItems: Record<string, FamilySpecItemsByGroupId> = {};
@@ -1063,7 +1286,10 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
       }
     }
 
-    addLog("info", `🗂️  Upserting ${Object.keys(allSpecGroups).length} spec group(s)...`);
+    addLog(
+      "info",
+      `🗂️  Upserting ${Object.keys(allSpecGroups).length} spec group(s)...`,
+    );
     const specGroupIds: Record<string, string> = {};
     for (const [groupName, labelsSet] of Object.entries(allSpecGroups)) {
       try {
@@ -1075,16 +1301,22 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
       }
     }
 
-    // Phase 2: Upsert product families
-    addLog("info", `📦 Upserting ${Object.keys(familyToGroups).length} product famil(ies)...`);
+    addLog(
+      "info",
+      `📦 Upserting ${Object.keys(familyToGroups).length} product famil(ies)...`,
+    );
     for (const [familyTitle, groupNames] of Object.entries(familyToGroups)) {
-      const specIds = Array.from(groupNames).map((g) => specGroupIds[g]).filter(Boolean);
+      const specIds = Array.from(groupNames)
+        .map((g) => specGroupIds[g])
+        .filter(Boolean);
       const byGroupId: FamilySpecItemsByGroupId = {};
       const perFamily = familySpecItems[familyTitle] ?? {};
       for (const groupName of groupNames) {
         const gid = specGroupIds[groupName];
         if (!gid) continue;
-        const labels = perFamily[groupName] ? Array.from(perFamily[groupName]) : [];
+        const labels = perFamily[groupName]
+          ? Array.from(perFamily[groupName])
+          : [];
         if (!byGroupId[gid]) byGroupId[gid] = new Set();
         labels.forEach((lbl) => byGroupId[gid].add(lbl.toUpperCase().trim()));
       }
@@ -1096,13 +1328,15 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
       }
     }
 
-    // Phase 3: Import products
     addLog("info", `\n📝 Importing products...`);
 
     for (let i = 0; i < allProducts.length; i++) {
       if (cancelledRef.current) {
         const remaining = allProducts.length - i;
-        addLog("warn", `🛑 Import cancelled. ${i} processed, ${remaining} remaining skipped.`);
+        addLog(
+          "warn",
+          `🛑 Import cancelled. ${i} processed, ${remaining} remaining skipped.`,
+        );
         setStats((prev) => ({ ...prev, skipped: prev.skipped + remaining }));
         break;
       }
@@ -1117,7 +1351,10 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
       try {
         const { isDuplicate, reason } = await checkDuplicate(p.itemCodes);
         if (isDuplicate) {
-          addLog("skip", `⏭  SKIPPED (duplicate ${reason}): ${p.itemDescription}`);
+          addLog(
+            "skip",
+            `⏭  SKIPPED (duplicate ${reason}): ${p.itemDescription}`,
+          );
           setStats((prev) => ({ ...prev, skipped: prev.skipped + 1 }));
           setProgress(((i + 1) / allProducts.length) * 100);
           await new Promise((r) => setTimeout(r, 20));
@@ -1231,7 +1468,10 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
 
         if (technicalSpecs.length > 0) {
           try {
-            addLog("info", `  → Generating TDS PDF for "${p.itemDescription}"...`);
+            addLog(
+              "info",
+              `  → Generating TDS PDF for "${p.itemDescription}"...`,
+            );
             const tdsBlob = await generateTdsPdf({
               itemDescription: p.itemDescription,
               itemCodes: p.itemCodes,
@@ -1242,7 +1482,8 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
               mainImageUrl: mainImage || undefined,
               rawImageUrl: rawImageUploaded || undefined,
               dimensionalDrawingUrl: dimensionalDrawingImage || undefined,
-              recommendedMountingHeightUrl: recommendedMountingHeightImage || undefined,
+              recommendedMountingHeightUrl:
+                recommendedMountingHeightImage || undefined,
               driverCompatibilityUrl: driverCompatibilityImage || undefined,
               baseImageUrl: baseImage || undefined,
               illuminanceLevelUrl: illuminanceLevelImage || undefined,
@@ -1254,7 +1495,8 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
               accessoriesImageUrl: accessoriesImage || undefined,
             });
 
-            const primaryCode = getFilledItemCodes(p.itemCodes)[0]?.code || p.itemDescription;
+            const primaryCode =
+              getFilledItemCodes(p.itemCodes)[0]?.code || p.itemDescription;
             const tdsFileUrl = await uploadTdsPdf(
               tdsBlob,
               `${primaryCode}_TDS.pdf`,
@@ -1270,10 +1512,16 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
               addLog("ok", `  ✅ TDS PDF generated for "${p.itemDescription}"`);
             }
           } catch (tdsErr: any) {
-            addLog("warn", `  ⚠️  TDS generation failed for "${p.itemDescription}": ${tdsErr.message}`);
+            addLog(
+              "warn",
+              `  ⚠️  TDS generation failed for "${p.itemDescription}": ${tdsErr.message}`,
+            );
           }
         } else {
-          addLog("info", `  ℹ️  No specs — TDS skipped for "${p.itemDescription}"`);
+          addLog(
+            "info",
+            `  ℹ️  No specs — TDS skipped for "${p.itemDescription}"`,
+          );
         }
 
         await logAuditEvent({
@@ -1339,11 +1587,14 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
     reset();
   };
 
-  // ── Derived ───────────────────────────────────────────────────────────────────
+  // ── Derived ───────────────────────────────────────────────────────────────
 
   const excelAllProducts = uploadedFiles.flatMap((f) => f.products);
   const excelFamilySummary = excelAllProducts.reduce<Record<string, number>>(
-    (acc, p) => { acc[p.productFamily] = (acc[p.productFamily] || 0) + 1; return acc; },
+    (acc, p) => {
+      acc[p.productFamily] = (acc[p.productFamily] || 0) + 1;
+      return acc;
+    },
     {},
   );
   const fileSummary = uploadedFiles.map((file) => ({
@@ -1356,7 +1607,10 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
   }));
   const previewProductCount = excelAllProducts.length;
   const previewCategoryCount = Object.keys(excelFamilySummary).length;
-  const totalWarnings = uploadedFiles.reduce((s, f) => s + f.warnings.length, 0);
+  const totalWarnings = uploadedFiles.reduce(
+    (s, f) => s + f.warnings.length,
+    0,
+  );
 
   const STEPS = ["idle", "preview", "importing", "done"] as const;
 
@@ -1368,33 +1622,36 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
     return { color: "#94a3b8" };
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <>
-      {/* Trigger button */}
-      <motion.button
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.97 }}
-        onClick={() => setOpen(true)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "10px 16px",
-          borderRadius: 12,
-          border: `1px solid ${TOKEN.border}`,
-          background: TOKEN.surface,
-          color: TOKEN.textPri,
-          fontSize: 13.5,
-          fontWeight: 600,
-          cursor: "pointer",
-        }}
-      >
-        <FileSpreadsheet size={15} />
-        Bulk Import
-      </motion.button>
+      {/* ── Trigger button (hidden when parent controls open state) ── */}
+      {!hideTrigger && (
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.97 }}
+          onClick={() => setOpen(true)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 16px",
+            borderRadius: 12,
+            border: `1px solid ${TOKEN.border}`,
+            background: TOKEN.surface,
+            color: TOKEN.textPri,
+            fontSize: 13.5,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          <FileSpreadsheet size={15} />
+          Bulk Import
+        </motion.button>
+      )}
 
+      {/* ── Dialog ── */}
       <AnimatePresence>
         {open && (
           <>
@@ -1414,7 +1671,7 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
               }}
             />
 
-            {/* Dialog */}
+            {/* Dialog panel */}
             <div
               style={{
                 position: "fixed",
@@ -1455,8 +1712,18 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                     flexShrink: 0,
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      marginBottom: 12,
+                    }}
+                  >
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 12 }}
+                    >
                       <div
                         style={{
                           width: 38,
@@ -1472,12 +1739,32 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                         <PackagePlus size={18} color={TOKEN.primary} />
                       </div>
                       <div>
-                        <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: TOKEN.textPri }}>
+                        <p
+                          style={{
+                            margin: 0,
+                            fontSize: 15,
+                            fontWeight: 800,
+                            color: TOKEN.textPri,
+                          }}
+                        >
                           Bulk Product Importer
                         </p>
-                        <p style={{ margin: "2px 0 0", fontSize: 11, color: TOKEN.textSec }}>
+                        <p
+                          style={{
+                            margin: "2px 0 0",
+                            fontSize: 11,
+                            color: TOKEN.textSec,
+                          }}
+                        >
                           JARIS&nbsp;
-                          <code style={{ fontFamily: "monospace", background: TOKEN.bg, padding: "1px 5px", borderRadius: 4 }}>
+                          <code
+                            style={{
+                              fontFamily: "monospace",
+                              background: TOKEN.bg,
+                              padding: "1px 5px",
+                              borderRadius: 4,
+                            }}
+                          >
                             .xlsx
                           </code>
                           &nbsp;— multi-brand item codes · plain tabular TDS
@@ -1507,10 +1794,20 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                   </div>
 
                   {/* Step breadcrumb */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 500 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: 11,
+                      fontWeight: 500,
+                    }}
+                  >
                     {STEPS.map((s, idx) => {
-                      const displayStep = step === "cancelled" ? "importing" : step;
-                      const isCancelledStep = step === "cancelled" && s === "importing";
+                      const displayStep =
+                        step === "cancelled" ? "importing" : step;
+                      const isCancelledStep =
+                        step === "cancelled" && s === "importing";
                       const isPast = idx < STEPS.indexOf(displayStep as any);
                       const isActive = displayStep === s;
                       return (
@@ -1526,11 +1823,12 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                                   : isPast
                                     ? `${TOKEN.primary}22`
                                     : TOKEN.bg,
-                              color: isCancelledStep || isActive
-                                ? "#fff"
-                                : isPast
-                                  ? TOKEN.primary
-                                  : TOKEN.textSec,
+                              color:
+                                isCancelledStep || isActive
+                                  ? "#fff"
+                                  : isPast
+                                    ? TOKEN.primary
+                                    : TOKEN.textSec,
                               fontWeight: isActive ? 700 : 500,
                               transition: "all 0.15s",
                             }}
@@ -1551,12 +1849,17 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
 
                 {/* ── Body ── */}
                 <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-
                   {/* IDLE */}
                   {step === "idle" && (
                     <div style={{ height: "100%", overflowY: "auto" }}>
-                      <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
-
+                      <div
+                        style={{
+                          padding: "20px 24px",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 16,
+                        }}
+                      >
                         {/* Multi-brand info banner */}
                         <div
                           style={{
@@ -1569,15 +1872,39 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                             background: "#eff6ff",
                           }}
                         >
-                          <Info size={14} color="#2563eb" style={{ flexShrink: 0, marginTop: 1 }} />
+                          <Info
+                            size={14}
+                            color="#2563eb"
+                            style={{ flexShrink: 0, marginTop: 1 }}
+                          />
                           <div>
-                            <p style={{ margin: "0 0 4px", fontSize: 12, fontWeight: 700, color: "#1e40af" }}>
+                            <p
+                              style={{
+                                margin: "0 0 4px",
+                                fontSize: 12,
+                                fontWeight: 700,
+                                color: "#1e40af",
+                              }}
+                            >
                               Multi-brand item codes supported
                             </p>
-                            <p style={{ margin: "0 0 6px", fontSize: 11, color: "#1e40af", opacity: 0.8 }}>
+                            <p
+                              style={{
+                                margin: "0 0 6px",
+                                fontSize: 11,
+                                color: "#1e40af",
+                                opacity: 0.8,
+                              }}
+                            >
                               Column headers detected automatically. Use any of:
                             </p>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                flexWrap: "wrap",
+                                gap: 4,
+                              }}
+                            >
                               {(ALL_BRANDS as ItemCodeBrand[]).map((b) => (
                                 <span
                                   key={b}
@@ -1592,12 +1919,28 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                                     gap: 3,
                                   }}
                                 >
-                                  <span className={ITEM_CODE_BRAND_CONFIG[b].dotClass} style={{ width: 5, height: 5, borderRadius: "50%" }} />
+                                  <span
+                                    className={
+                                      ITEM_CODE_BRAND_CONFIG[b].dotClass
+                                    }
+                                    style={{
+                                      width: 5,
+                                      height: 5,
+                                      borderRadius: "50%",
+                                    }}
+                                  />
                                   {ITEM_CODE_BRAND_CONFIG[b].label} Item Code
                                 </span>
                               ))}
                             </div>
-                            <p style={{ margin: "5px 0 0", fontSize: 10, color: "#1e40af", opacity: 0.7 }}>
+                            <p
+                              style={{
+                                margin: "5px 0 0",
+                                fontSize: 10,
+                                color: "#1e40af",
+                                opacity: 0.7,
+                              }}
+                            >
                               At least one item code column per row is required.
                             </p>
                           </div>
@@ -1616,7 +1959,9 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                             justifyContent: "center",
                             gap: 14,
                             cursor: "pointer",
-                            background: isDragActive ? `${TOKEN.primary}06` : TOKEN.bg,
+                            background: isDragActive
+                              ? `${TOKEN.primary}06`
+                              : TOKEN.bg,
                             transition: "all 0.2s",
                           }}
                         >
@@ -1626,7 +1971,9 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                               width: 56,
                               height: 56,
                               borderRadius: 16,
-                              background: isDragActive ? TOKEN.primary : TOKEN.surface,
+                              background: isDragActive
+                                ? TOKEN.primary
+                                : TOKEN.surface,
                               border: `1px solid ${TOKEN.border}`,
                               display: "flex",
                               alignItems: "center",
@@ -1635,28 +1982,62 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                             }}
                           >
                             {isDragActive ? (
-                              <FileUp size={26} color="#fff" style={{ animation: "bounce 0.6s ease infinite alternate" }} />
+                              <FileUp
+                                size={26}
+                                color="#fff"
+                                style={{
+                                  animation:
+                                    "bounce 0.6s ease infinite alternate",
+                                }}
+                              />
                             ) : (
                               <Upload size={26} color={TOKEN.textSec} />
                             )}
                           </div>
                           <div style={{ textAlign: "center" }}>
-                            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: TOKEN.textPri }}>
-                              {isDragActive ? "Release to parse" : "Drop JARIS template files here"}
+                            <p
+                              style={{
+                                margin: 0,
+                                fontSize: 14,
+                                fontWeight: 700,
+                                color: TOKEN.textPri,
+                              }}
+                            >
+                              {isDragActive
+                                ? "Release to parse"
+                                : "Drop JARIS template files here"}
                             </p>
-                            <p style={{ margin: "4px 0 0", fontSize: 12, color: TOKEN.textSec }}>
+                            <p
+                              style={{
+                                margin: "4px 0 0",
+                                fontSize: 12,
+                                color: TOKEN.textSec,
+                              }}
+                            >
                               or{" "}
-                              <span style={{ color: TOKEN.primary, textDecoration: "underline", cursor: "pointer" }}>
+                              <span
+                                style={{
+                                  color: TOKEN.primary,
+                                  textDecoration: "underline",
+                                  cursor: "pointer",
+                                }}
+                              >
                                 browse
-                              </span>
-                              {" "}— accepts multiple .xlsx files
+                              </span>{" "}
+                              — accepts multiple .xlsx files
                             </p>
                           </div>
                         </div>
 
-                        {/* Console (logs during parsing) */}
+                        {/* Console during parsing */}
                         {logs.length > 0 && (
-                          <div style={{ borderRadius: 12, overflow: "hidden", border: "1px solid #1e293b" }}>
+                          <div
+                            style={{
+                              borderRadius: 12,
+                              overflow: "hidden",
+                              border: "1px solid #1e293b",
+                            }}
+                          >
                             <div
                               style={{
                                 display: "flex",
@@ -1687,11 +2068,26 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                               }}
                             >
                               {logs.map((log, i) => (
-                                <div key={i} style={{ display: "flex", gap: 10, ...logColor(log.type) }}>
-                                  <span style={{ color: "#334155", flexShrink: 0, userSelect: "none" }}>
+                                <div
+                                  key={i}
+                                  style={{
+                                    display: "flex",
+                                    gap: 10,
+                                    ...logColor(log.type),
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      color: "#334155",
+                                      flexShrink: 0,
+                                      userSelect: "none",
+                                    }}
+                                  >
                                     [{String(i + 1).padStart(3, "0")}]
                                   </span>
-                                  <span style={{ wordBreak: "break-all" }}>{log.msg}</span>
+                                  <span style={{ wordBreak: "break-all" }}>
+                                    {log.msg}
+                                  </span>
                                 </div>
                               ))}
                               <div ref={logsEndRef} />
@@ -1704,8 +2100,13 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
 
                   {/* PREVIEW */}
                   {step === "preview" && (
-                    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-                      {/* Preview header */}
+                    <div
+                      style={{
+                        height: "100%",
+                        display: "flex",
+                        flexDirection: "column",
+                      }}
+                    >
                       <div
                         style={{
                           padding: "12px 24px",
@@ -1717,15 +2118,43 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                           gap: 8,
                         }}
                       >
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                          }}
+                        >
                           <div>
-                            <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: TOKEN.textPri }}>
-                              <span style={{ color: TOKEN.primary, fontWeight: 800 }}>{previewProductCount}</span>{" "}
-                              product{previewProductCount !== 1 ? "s" : ""} ready across{" "}
-                              {previewCategoryCount} famil{previewCategoryCount !== 1 ? "ies" : "y"}
+                            <p
+                              style={{
+                                margin: 0,
+                                fontSize: 13,
+                                fontWeight: 600,
+                                color: TOKEN.textPri,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  color: TOKEN.primary,
+                                  fontWeight: 800,
+                                }}
+                              >
+                                {previewProductCount}
+                              </span>{" "}
+                              product{previewProductCount !== 1 ? "s" : ""}{" "}
+                              ready across {previewCategoryCount} famil
+                              {previewCategoryCount !== 1 ? "ies" : "y"}
                             </p>
-                            <p style={{ margin: "2px 0 0", fontSize: 11, color: TOKEN.textSec }}>
-                              Duplicates skipped · Saved as Draft · TDS plain tabular · N/A values excluded
+                            <p
+                              style={{
+                                margin: "2px 0 0",
+                                fontSize: 11,
+                                color: TOKEN.textSec,
+                              }}
+                            >
+                              Duplicates skipped · Saved as Draft · TDS plain
+                              tabular · N/A values excluded
                             </p>
                           </div>
                           <button
@@ -1765,7 +2194,8 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                             }}
                           >
                             <AlertCircle size={11} />
-                            {totalWarnings} row{totalWarnings !== 1 ? "s" : ""} skipped
+                            {totalWarnings} row
+                            {totalWarnings !== 1 ? "s" : ""} skipped
                           </span>
                         )}
                       </div>
@@ -1806,7 +2236,13 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                       </div>
 
                       {/* Tab content */}
-                      <div style={{ flex: 1, minHeight: 0, padding: "16px 24px" }}>
+                      <div
+                        style={{
+                          flex: 1,
+                          minHeight: 0,
+                          padding: "16px 24px",
+                        }}
+                      >
                         {activeTab === "files" && (
                           <FilesPanel fileSummary={fileSummary} />
                         )}
@@ -1824,12 +2260,34 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                   )}
 
                   {/* IMPORTING / DONE / CANCELLED */}
-                  {(step === "importing" || step === "done" || step === "cancelled") && (
-                    <div style={{ height: "100%", display: "flex", flexDirection: "column", padding: "20px 24px", gap: 16 }}>
-
+                  {(step === "importing" ||
+                    step === "done" ||
+                    step === "cancelled") && (
+                    <div
+                      style={{
+                        height: "100%",
+                        display: "flex",
+                        flexDirection: "column",
+                        padding: "20px 24px",
+                        gap: 16,
+                      }}
+                    >
                       {/* Progress bar */}
-                      <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div
+                        style={{
+                          flexShrink: 0,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 8,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                          }}
+                        >
                           <span
                             style={{
                               display: "flex",
@@ -1841,7 +2299,13 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                             }}
                           >
                             {importing ? (
-                              <Loader2 size={15} color={TOKEN.primary} style={{ animation: "spin 0.8s linear infinite" }} />
+                              <Loader2
+                                size={15}
+                                color={TOKEN.primary}
+                                style={{
+                                  animation: "spin 0.8s linear infinite",
+                                }}
+                              />
                             ) : step === "cancelled" ? (
                               <XCircle size={15} color="#f97316" />
                             ) : (
@@ -1853,12 +2317,17 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                                 ? "Import cancelled"
                                 : "Import complete"}
                           </span>
-                          <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: TOKEN.primary }}>
+                          <span
+                            style={{
+                              fontFamily: "monospace",
+                              fontSize: 13,
+                              fontWeight: 700,
+                              color: TOKEN.primary,
+                            }}
+                          >
                             {Math.round(progress)}%
                           </span>
                         </div>
-
-                        {/* Progress bar track */}
                         <div
                           style={{
                             height: 10,
@@ -1872,7 +2341,10 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                             style={{
                               height: "100%",
                               width: `${progress}%`,
-                              background: step === "cancelled" ? "#f97316" : TOKEN.primary,
+                              background:
+                                step === "cancelled"
+                                  ? "#f97316"
+                                  : TOKEN.primary,
                               borderRadius: 999,
                               transition: "width 0.3s ease",
                             }}
@@ -1881,12 +2353,43 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                       </div>
 
                       {/* Stats grid */}
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, flexShrink: 0 }}>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(4, 1fr)",
+                          gap: 10,
+                          flexShrink: 0,
+                        }}
+                      >
                         {[
-                          { label: "Total", val: stats.total, color: "#1d4ed8", bg: "#dbeafe", border: "#bfdbfe" },
-                          { label: "Success", val: stats.success, color: "#15803d", bg: "#dcfce7", border: "#bbf7d0" },
-                          { label: "Failed", val: stats.failed, color: "#b91c1c", bg: "#fee2e2", border: "#fecaca" },
-                          { label: "Skipped", val: stats.skipped, color: "#b45309", bg: "#fef3c7", border: "#fde68a" },
+                          {
+                            label: "Total",
+                            val: stats.total,
+                            color: "#1d4ed8",
+                            bg: "#dbeafe",
+                            border: "#bfdbfe",
+                          },
+                          {
+                            label: "Success",
+                            val: stats.success,
+                            color: "#15803d",
+                            bg: "#dcfce7",
+                            border: "#bbf7d0",
+                          },
+                          {
+                            label: "Failed",
+                            val: stats.failed,
+                            color: "#b91c1c",
+                            bg: "#fee2e2",
+                            border: "#fecaca",
+                          },
+                          {
+                            label: "Skipped",
+                            val: stats.skipped,
+                            color: "#b45309",
+                            bg: "#fef3c7",
+                            border: "#fde68a",
+                          },
                         ].map((s) => (
                           <div
                             key={s.label}
@@ -1898,10 +2401,28 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                               textAlign: "center",
                             }}
                           >
-                            <p style={{ margin: 0, fontSize: 26, fontWeight: 900, color: s.color, fontVariantNumeric: "tabular-nums" }}>
+                            <p
+                              style={{
+                                margin: 0,
+                                fontSize: 26,
+                                fontWeight: 900,
+                                color: s.color,
+                                fontVariantNumeric: "tabular-nums",
+                              }}
+                            >
                               {s.val}
                             </p>
-                            <p style={{ margin: "3px 0 0", fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: s.color, opacity: 0.7 }}>
+                            <p
+                              style={{
+                                margin: "3px 0 0",
+                                fontSize: 9,
+                                fontWeight: 700,
+                                textTransform: "uppercase",
+                                letterSpacing: "0.1em",
+                                color: s.color,
+                                opacity: 0.7,
+                              }}
+                            >
                               {s.label}
                             </p>
                           </div>
@@ -1909,7 +2430,15 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                       </div>
 
                       {/* Terminal console */}
-                      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div
+                        style={{
+                          flex: 1,
+                          minHeight: 0,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 6,
+                        }}
+                      >
                         <div
                           style={{
                             display: "flex",
@@ -1942,11 +2471,26 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                           }}
                         >
                           {logs.map((log, i) => (
-                            <div key={i} style={{ display: "flex", gap: 10, ...logColor(log.type) }}>
-                              <span style={{ color: "#334155", flexShrink: 0, userSelect: "none" }}>
+                            <div
+                              key={i}
+                              style={{
+                                display: "flex",
+                                gap: 10,
+                                ...logColor(log.type),
+                              }}
+                            >
+                              <span
+                                style={{
+                                  color: "#334155",
+                                  flexShrink: 0,
+                                  userSelect: "none",
+                                }}
+                              >
                                 [{String(i + 1).padStart(3, "0")}]
                               </span>
-                              <span style={{ wordBreak: "break-all" }}>{log.msg}</span>
+                              <span style={{ wordBreak: "break-all" }}>
+                                {log.msg}
+                              </span>
                             </div>
                           ))}
                           {importing && (
@@ -2040,12 +2584,16 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
                           color: "#fff",
                           fontSize: 12,
                           fontWeight: 700,
-                          cursor: cancelledRef.current ? "not-allowed" : "pointer",
+                          cursor: cancelledRef.current
+                            ? "not-allowed"
+                            : "pointer",
                           opacity: cancelledRef.current ? 0.6 : 1,
                         }}
                       >
                         <XCircle size={14} />
-                        {cancelledRef.current ? "Cancelling..." : "Cancel Import"}
+                        {cancelledRef.current
+                          ? "Cancelling..."
+                          : "Cancel Import"}
                       </motion.button>
                     )}
 
@@ -2079,11 +2627,15 @@ export default function BulkUploader({ onUploadComplete }: { onUploadComplete?: 
         )}
       </AnimatePresence>
 
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes bounce { to { transform: translateY(-4px); } }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-      ` }} />
+      `,
+        }}
+      />
     </>
   );
 }
