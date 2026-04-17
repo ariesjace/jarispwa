@@ -260,7 +260,7 @@ export function ProductFamilyModal({
                               {group.items.length > 0 && (
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
                                   {group.items.map((item) => (
-                                    <span key={item.id} style={{
+                                    <span key={`${group.id}-${item.id}`} style={{
                                       fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: 5,
                                       background: TOKEN.bg, border: `1px solid ${TOKEN.border}`, color: TOKEN.textSec,
                                       textTransform: "uppercase",

@@ -220,15 +220,16 @@ export function ProductFormSheet({
           )}
 
           {/* Dynamic spec groups */}
-          {specGroups.map((group) =>
-            sectionCard(
-              <>
-                {group.items.map((item) => (
-                  <div key={item.id}>
-                    <label htmlFor={item.id} style={labelStyle}>
-                      {item.label}
-                      {item.required && <span style={{ color: TOKEN.danger, marginLeft: 3 }}>*</span>}
-                    </label>
+          {specGroups.map((group) => (
+            <div key={group.id}>
+              {sectionCard(
+                <>
+                  {group.items.map((item) => (
+                    <div key={`${group.id}-${item.id}`}>
+                      <label htmlFor={item.id} style={labelStyle}>
+                        {item.label}
+                        {item.required && <span style={{ color: TOKEN.danger, marginLeft: 3 }}>*</span>}
+                      </label>
 
                     {(item.type === "text" || item.type === "number") && (
                       <input
@@ -266,8 +267,9 @@ export function ProductFormSheet({
               </>,
               group.label,
               `${group.items.length} specification${group.items.length !== 1 ? "s" : ""}`
-            )
-          )}
+            )}
+            </div>
+          ))}
 
           {/* Image upload */}
           {sectionCard(
