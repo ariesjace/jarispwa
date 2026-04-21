@@ -4,16 +4,45 @@ import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronRight, Check, X, Search } from "lucide-react";
 import { TOKEN, SPRING_MED } from "@/components/layout/tokens";
-import type { ProductFamily } from "./AddProductFlow";
+import type { AvailableSpecItem } from "./types";
+
+interface RawSpecItem {
+  name?: string;
+  label?: string;
+}
+
+interface RawFamilySpecGroup {
+  specGroupId: string;
+  specItems?: RawSpecItem[];
+}
+
+interface RawFamilyDoc {
+  id: string;
+  title?: string;
+  name?: string;
+  description?: string;
+  specs?: RawFamilySpecGroup[];
+  productUsage?: string[];
+}
+
+interface RawSpecGroupDoc {
+  id: string;
+  name?: string;
+}
 
 interface ProductFamilyModalProps {
   isOpen: boolean;
   onClose: () => void;
-  productFamilies: ProductFamily[];
-  onSelect: (familyId: string, selectedSpecGroups: string[]) => void;
+  rawFamilyDocs: RawFamilyDoc[];
+  rawSpecGroupDocs: RawSpecGroupDoc[];
+  onSelect: (payload: {
+    familyId: string;
+    familyTitle: string;
+    selectedSpecGroupIds: string[];
+    availableSpecs: AvailableSpecItem[];
+    productUsage: string[];
+  }) => void;
 }
-
-// ── Shared styles ─────────────────────────────────────────────────────────────
 
 const labelStyle: React.CSSProperties = {
   display: "block",
@@ -41,7 +70,8 @@ const outlineBtn: React.CSSProperties = {
 export function ProductFamilyModal({
   isOpen,
   onClose,
-  productFamilies,
+  rawFamilyDocs,
+  rawSpecGroupDocs,
   onSelect,
 }: ProductFamilyModalProps) {
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
@@ -51,39 +81,93 @@ export function ProductFamilyModal({
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
   const [familySearch, setFamilySearch] = useState("");
 
-  const selectedFamily = productFamilies.find((f) => f.id === selectedFamilyId);
+  const selectedFamily = rawFamilyDocs.find((f) => f.id === selectedFamilyId);
 
-  // ── Filtered families ──────────────────────────────────────────────────────
   const filteredFamilies = useMemo(() => {
-    if (!familySearch.trim()) return productFamilies;
-    return productFamilies.filter(
+    if (!familySearch.trim()) return rawFamilyDocs;
+    return rawFamilyDocs.filter(
       (f) =>
-        f.name.toLowerCase().includes(familySearch.toLowerCase()) ||
+        (f.title ?? f.name ?? "").toLowerCase().includes(familySearch.toLowerCase()) ||
         f.description?.toLowerCase().includes(familySearch.toLowerCase()),
     );
-  }, [productFamilies, familySearch]);
+  }, [rawFamilyDocs, familySearch]);
+
+  const resolveGroupName = (specGroupId: string): string => {
+    const group = rawSpecGroupDocs.find((g) => g.id === specGroupId);
+    return group?.name ?? specGroupId;
+  };
+
+  const resolveAvailableSpecs = (
+    family: RawFamilyDoc,
+    specGroupDocs: RawSpecGroupDoc[],
+    selectedGroupIds?: Set<string>,
+  ): AvailableSpecItem[] => {
+    const specs: AvailableSpecItem[] = [];
+    const familySpecs = Array.isArray(family.specs) ? family.specs : [];
+
+    for (const groupRef of familySpecs) {
+      if (selectedGroupIds && !selectedGroupIds.has(groupRef.specGroupId)) {
+        continue;
+      }
+      const groupDoc = specGroupDocs.find((g) => g.id === groupRef.specGroupId);
+      const groupName = groupDoc?.name ?? groupRef.specGroupId;
+      const specItems = Array.isArray(groupRef.specItems) ? groupRef.specItems : [];
+
+      for (const item of specItems) {
+        const label = (item.name ?? item.label ?? "").toUpperCase().trim();
+        if (!label) continue;
+        specs.push({
+          specGroupId: groupRef.specGroupId,
+          specGroup: groupName,
+          label,
+          id: `${groupRef.specGroupId}:${label}`,
+        });
+      }
+    }
+    return specs;
+  };
 
   const handleFamilySelect = (familyId: string) => {
     setSelectedFamilyId(familyId);
     setFamilySearch("");
-    const family = productFamilies.find((f) => f.id === familyId);
-    if (family)
-      setSelectedSpecGroups(
-        new Set(family.availableSpecGroups.map((g) => g.id)),
-      );
+    const family = rawFamilyDocs.find((f) => f.id === familyId);
+    const familySpecs = Array.isArray(family?.specs) ? family.specs : [];
+    setSelectedSpecGroups(
+      new Set(
+        familySpecs
+          .map((g) => g?.specGroupId)
+          .filter((id: string | undefined) => !!id),
+      ),
+    );
   };
 
   const toggleSpecGroup = (groupId: string) => {
     setSelectedSpecGroups((prev) => {
       const next = new Set(prev);
-      next.has(groupId) ? next.delete(groupId) : next.add(groupId);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
       return next;
     });
   };
 
   const handleContinue = () => {
-    if (selectedFamilyId && selectedSpecGroups.size > 0) {
-      onSelect(selectedFamilyId, Array.from(selectedSpecGroups));
+    if (selectedFamily && selectedSpecGroups.size > 0) {
+      onSelect({
+        familyId: selectedFamily.id,
+        familyTitle: selectedFamily.title ?? selectedFamily.name ?? "",
+        selectedSpecGroupIds: Array.from(selectedSpecGroups),
+        availableSpecs: resolveAvailableSpecs(
+          selectedFamily,
+          rawSpecGroupDocs,
+          selectedSpecGroups,
+        ),
+        productUsage: Array.isArray(selectedFamily.productUsage)
+          ? selectedFamily.productUsage
+          : [],
+      });
       setSelectedFamilyId(null);
       setSelectedSpecGroups(new Set());
       setFamilySearch("");
@@ -103,7 +187,6 @@ export function ProductFamilyModal({
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* Backdrop */}
           <motion.div
             key="family-backdrop"
             initial={{ opacity: 0 }}
@@ -119,7 +202,6 @@ export function ProductFamilyModal({
             }}
           />
 
-          {/* Centered dialog wrapper */}
           <div
             style={{
               position: "fixed",
@@ -152,7 +234,6 @@ export function ProductFamilyModal({
                 overflow: "hidden",
               }}
             >
-              {/* Header */}
               <div
                 style={{
                   padding: "22px 28px 18px",
@@ -172,9 +253,7 @@ export function ProductFamilyModal({
                       color: TOKEN.textPri,
                     }}
                   >
-                    {selectedFamilyId
-                      ? "Configure Specifications"
-                      : "Select Product Family"}
+                    {selectedFamilyId ? "Configure Specifications" : "Select Product Family"}
                   </p>
                   <p
                     style={{
@@ -183,9 +262,7 @@ export function ProductFamilyModal({
                       color: TOKEN.textSec,
                     }}
                   >
-                    {selectedFamilyId
-                      ? "Choose which specification groups to include"
-                      : "Select a product family to get started"}
+                    {selectedFamilyId ? "Choose which specification groups to include" : "Select a product family to get started"}
                   </p>
                 </div>
                 <button
@@ -205,12 +282,9 @@ export function ProductFamilyModal({
                 </button>
               </div>
 
-              {/* Scrollable content */}
               <div style={{ flex: 1, overflowY: "auto", padding: "22px 28px" }}>
                 {!selectedFamilyId ? (
-                  /* ── Family selection ── */
                   <>
-                    {/* ── Search bar ── */}
                     <div style={{ position: "relative", marginBottom: 18 }}>
                       <Search
                         size={15}
@@ -271,12 +345,11 @@ export function ProductFamilyModal({
                     </div>
 
                     <label style={labelStyle}>
-                      {filteredFamilies.length} famil
-                      {filteredFamilies.length !== 1 ? "ies" : "y"}
+                      {filteredFamilies.length} famil{filteredFamilies.length !== 1 ? "ies" : "y"}
                       {familySearch && ` matching "${familySearch}"`}
                     </label>
 
-                    {productFamilies.length === 0 ? (
+                    {rawFamilyDocs.length === 0 ? (
                       <p
                         style={{
                           textAlign: "center",
@@ -322,7 +395,6 @@ export function ProductFamilyModal({
                         </button>
                       </div>
                     ) : (
-                      /* ── Family grid — 2-col on desktop, 1-col centered on mobile ── */
                       <div
                         style={{
                           display: "grid",
@@ -369,7 +441,7 @@ export function ProductFamilyModal({
                                     color: TOKEN.textPri,
                                   }}
                                 >
-                                  {family.name}
+                                  {family.title ?? family.name ?? ""}
                                 </p>
                                 {family.description && (
                                   <p
@@ -390,7 +462,7 @@ export function ProductFamilyModal({
                                 style={{ flexShrink: 0, marginTop: 3 }}
                               />
                             </div>
-                            {family.availableSpecGroups.length > 0 && (
+                            {(family.specs ?? []).length > 0 && (
                               <div
                                 style={{
                                   display: "flex",
@@ -399,11 +471,11 @@ export function ProductFamilyModal({
                                   marginTop: 10,
                                 }}
                               >
-                                {family.availableSpecGroups
+                                {(family.specs ?? [])
                                   .slice(0, 4)
                                   .map((g) => (
                                     <span
-                                      key={g.id}
+                                      key={g.specGroupId}
                                       style={{
                                         fontSize: 9,
                                         fontWeight: 700,
@@ -415,10 +487,10 @@ export function ProductFamilyModal({
                                         textTransform: "uppercase",
                                       }}
                                     >
-                                      {g.label}
+                                      {resolveGroupName(g.specGroupId)}
                                     </span>
                                   ))}
-                                {family.availableSpecGroups.length > 4 && (
+                                {(family.specs ?? []).length > 4 && (
                                   <span
                                     style={{
                                       fontSize: 9,
@@ -430,8 +502,7 @@ export function ProductFamilyModal({
                                       color: TOKEN.primary,
                                     }}
                                   >
-                                    +{family.availableSpecGroups.length - 4}{" "}
-                                    more
+                                    +{(family.specs ?? []).length - 4} more
                                   </span>
                                 )}
                               </div>
@@ -442,7 +513,6 @@ export function ProductFamilyModal({
                     )}
                   </>
                 ) : (
-                  /* ── Spec group config ── */
                   <div
                     style={{
                       display: "flex",
@@ -450,7 +520,6 @@ export function ProductFamilyModal({
                       gap: 12,
                     }}
                   >
-                    {/* Selected family tag */}
                     <div
                       style={{
                         background: TOKEN.bg,
@@ -471,7 +540,7 @@ export function ProductFamilyModal({
                             color: TOKEN.textPri,
                           }}
                         >
-                          {selectedFamily?.name}
+                          {selectedFamily?.title ?? selectedFamily?.name ?? ""}
                         </p>
                         {selectedFamily?.description && (
                           <p
@@ -503,12 +572,15 @@ export function ProductFamilyModal({
 
                     <label style={labelStyle}>Specification groups</label>
 
-                    {selectedFamily?.availableSpecGroups.map((group) => {
-                      const isSelected = selectedSpecGroups.has(group.id);
+                    {(Array.isArray(selectedFamily?.specs) ? selectedFamily?.specs : []).map(
+                      (group) => {
+                      const groupId = group.specGroupId;
+                      const isSelected = selectedSpecGroups.has(groupId);
+                      const items = Array.isArray(group.specItems) ? group.specItems : [];
                       return (
                         <div
-                          key={group.id}
-                          onClick={() => toggleSpecGroup(group.id)}
+                          key={groupId}
+                          onClick={() => toggleSpecGroup(groupId)}
                           style={{
                             border: `1px solid ${isSelected ? TOKEN.primary : TOKEN.border}`,
                             background: isSelected
@@ -555,7 +627,7 @@ export function ProductFamilyModal({
                                   color: TOKEN.textPri,
                                 }}
                               >
-                                {group.label}
+                                {resolveGroupName(groupId)}
                               </p>
                               <p
                                 style={{
@@ -564,10 +636,9 @@ export function ProductFamilyModal({
                                   color: TOKEN.textSec,
                                 }}
                               >
-                                {group.items.length} specification
-                                {group.items.length !== 1 ? "s" : ""}
+                                {items.length} specification{items.length !== 1 ? "s" : ""}
                               </p>
-                              {group.items.length > 0 && (
+                              {items.length > 0 && (
                                 <div
                                   style={{
                                     display: "flex",
@@ -576,9 +647,18 @@ export function ProductFamilyModal({
                                     marginTop: 8,
                                   }}
                                 >
-                                  {group.items.map((item) => (
+                                  {items.map((item) => {
+                                    const label = (
+                                      item.name ??
+                                      item.label ??
+                                      ""
+                                    )
+                                      .toUpperCase()
+                                      .trim();
+                                    if (!label) return null;
+                                    return (
                                     <span
-                                      key={`${group.id}-${item.id}`}
+                                      key={`${groupId}-${label}`}
                                       style={{
                                         fontSize: 9,
                                         fontWeight: 700,
@@ -590,19 +670,10 @@ export function ProductFamilyModal({
                                         textTransform: "uppercase",
                                       }}
                                     >
-                                      {item.label}
-                                      {item.required && (
-                                        <span
-                                          style={{
-                                            color: TOKEN.danger,
-                                            marginLeft: 2,
-                                          }}
-                                        >
-                                          *
-                                        </span>
-                                      )}
+                                      {label}
                                     </span>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               )}
                             </div>
@@ -637,7 +708,6 @@ export function ProductFamilyModal({
                 )}
               </div>
 
-              {/* Footer */}
               <div
                 style={{
                   padding: "16px 28px",
@@ -684,7 +754,7 @@ export function ProductFamilyModal({
                       opacity: selectedSpecGroups.size === 0 ? 0.5 : 1,
                     }}
                   >
-                    Continue to Product Class
+                    Continue
                   </motion.button>
                 )}
               </div>

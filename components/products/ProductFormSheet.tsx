@@ -1,27 +1,25 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { X, Upload, ArrowLeft } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useDropzone } from "react-dropzone";
+import { ArrowLeft, Upload, X } from "lucide-react";
 import { TOKEN } from "@/components/layout/tokens";
-import type {
-  ProductFamily,
-  SpecGroup,
-  ProductFormData,
-} from "./AddProductFlow";
-import type { ItemCodes } from "@/types/product";
 import { ItemCodesInput } from "@/components/ItemCodesDisplay";
+import { hasAtLeastOneItemCode, type ItemCodes } from "@/types/product";
+import type {
+  AvailableSpecItem,
+  ProductFormData,
+  ValidationErrors,
+} from "./types";
 
 interface ProductFormSheetProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: Partial<ProductFormData>) => void;
   onBack: () => void;
-  productFamily: ProductFamily;
-  specGroups: SpecGroup[];
-  initialData?: Partial<ProductFormData>;
+  formData: Partial<ProductFormData>;
+  allSpecGroups: Array<{ id: string; name: string; items: { label: string }[] }>;
 }
-
-// ── Shared styles (matching FamiliesForm pattern) ─────────────────────────────
 
 const labelStyle: React.CSSProperties = {
   display: "block",
@@ -85,135 +83,165 @@ const iconBtn = (): React.CSSProperties => ({
   alignItems: "center",
 });
 
-// ── Component ─────────────────────────────────────────────────────────────────
+const sectionCardStyle: React.CSSProperties = {
+  border: `1px solid ${TOKEN.border}`,
+  borderRadius: 14,
+  overflow: "hidden",
+  background: TOKEN.surface,
+};
+
+const sectionHeaderStyle: React.CSSProperties = {
+  padding: "12px 18px",
+  borderBottom: `1px solid ${TOKEN.border}`,
+  background: TOKEN.bg,
+  fontSize: 11,
+  fontWeight: 800,
+  color: TOKEN.textPri,
+  textTransform: "uppercase",
+  letterSpacing: "0.04em",
+};
+
+const sectionBodyStyle: React.CSSProperties = {
+  padding: "16px 18px",
+  display: "flex",
+  flexDirection: "column",
+  gap: 14,
+};
+
+function dropzoneStyle(isDragActive: boolean): React.CSSProperties {
+  return {
+    border: `1.5px dashed ${isDragActive ? TOKEN.primary : TOKEN.border}`,
+    borderRadius: 10,
+    padding: "18px 16px",
+    background: isDragActive ? `${TOKEN.primary}08` : TOKEN.bg,
+    color: TOKEN.textSec,
+    cursor: "pointer",
+    transition: "all 0.15s",
+  };
+}
+
+function groupSpecs(
+  specs: AvailableSpecItem[],
+  allSpecGroups: Array<{ id: string; name: string }>,
+) {
+  const map = new Map<string, { groupName: string; items: AvailableSpecItem[] }>();
+  specs.forEach((spec) => {
+    if (!map.has(spec.specGroupId)) {
+      const fallbackName =
+        allSpecGroups.find((g) => g.id === spec.specGroupId)?.name ?? spec.specGroupId;
+      map.set(spec.specGroupId, {
+        groupName: spec.specGroup || fallbackName,
+        items: [],
+      });
+    }
+    map.get(spec.specGroupId)?.items.push(spec);
+  });
+  return Array.from(map.entries()).map(([specGroupId, value]) => ({
+    specGroupId,
+    groupName: value.groupName,
+    items: value.items,
+  }));
+}
 
 export function ProductFormSheet({
   isOpen,
   onClose,
   onSubmit,
   onBack,
-  productFamily,
-  specGroups,
-  initialData,
+  formData,
+  allSpecGroups,
 }: ProductFormSheetProps) {
-  const [itemDescription, setItemDescription] = useState(
-    initialData?.itemDescription || "",
-  );
-  const [itemCodes, setItemCodes] = useState<ItemCodes>(
-    (initialData?.itemCodes as ItemCodes) ?? {},
-  );
-  const [specValues, setSpecValues] = useState<Record<string, any>>(
-    initialData?.specValues || {},
-  );
-  const [images, setImages] = useState<File[]>(initialData?.images || []);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [itemDescription, setItemDescription] = useState(formData.itemDescription ?? "");
+  const [itemCodes, setItemCodes] = useState<ItemCodes>(formData.itemCodes ?? {});
+  const [specValues, setSpecValues] = useState<Record<string, string>>(formData.specValues ?? {});
+  const [mainImageFile, setMainImageFile] = useState<File | null>(formData.mainImageFile ?? null);
+  const [rawImageFile, setRawImageFile] = useState<File | null>(formData.rawImageFile ?? null);
+  const [galleryFiles, setGalleryFiles] = useState<File[]>(formData.images ?? []);
   const [showItemCodeError, setShowItemCodeError] = useState(false);
+  const [errors, setErrors] = useState<ValidationErrors>({});
 
-  useEffect(() => {
-    if (initialData?.itemDescription)
-      setItemDescription(initialData.itemDescription);
-    if (initialData?.itemCodes)
-      setItemCodes(initialData.itemCodes as ItemCodes);
-    if (initialData?.specValues) setSpecValues(initialData.specValues);
-    if (initialData?.images) setImages(initialData.images);
-  }, [initialData]);
+  const specsByGroup = useMemo(
+    () => groupSpecs(formData.availableSpecs ?? [], allSpecGroups),
+    [formData.availableSpecs, allSpecGroups],
+  );
 
-  const handleSpecChange = (id: string, value: any) =>
-    setSpecValues((prev) => ({ ...prev, [id]: value }));
+  const mainDropzone = useDropzone({
+    multiple: false,
+    accept: { "image/*": [] },
+    onDrop: (acceptedFiles) => {
+      setMainImageFile(acceptedFiles[0] ?? null);
+    },
+  });
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) setImages([...images, ...Array.from(e.target.files)]);
+  const rawDropzone = useDropzone({
+    multiple: false,
+    accept: { "image/*": [] },
+    onDrop: (acceptedFiles) => {
+      setRawImageFile(acceptedFiles[0] ?? null);
+    },
+  });
+
+  const galleryDropzone = useDropzone({
+    multiple: true,
+    accept: { "image/*": [] },
+    onDrop: (acceptedFiles) => {
+      setGalleryFiles((prev) => [...prev, ...acceptedFiles]);
+    },
+  });
+
+  const handleSpecChange = (key: string, value: string) => {
+    setSpecValues((prev) => ({ ...prev, [key]: value }));
   };
 
-  const removeImage = (i: number) =>
-    setImages(images.filter((_, idx) => idx !== i));
-
-  // Check at least one item code is filled
-  const hasAtLeastOneCode = Object.values(itemCodes).some(
-    (v) => v && v.trim() !== "" && v.trim().toUpperCase() !== "N/A",
-  );
-
   const validate = (): boolean => {
-    const errs: Record<string, string> = {};
-    if (!itemDescription.trim())
+    const errs: ValidationErrors = {};
+    if (!itemDescription.trim()) {
       errs.itemDescription = "Item description is required";
-    if (!hasAtLeastOneCode) {
+    }
+    if (!hasAtLeastOneItemCode(itemCodes)) {
       setShowItemCodeError(true);
       errs.itemCodes = "At least one item code is required";
     } else {
       setShowItemCodeError(false);
     }
-    specGroups.forEach((g) =>
-      g.items.forEach((item) => {
-        if (item.required && !specValues[item.id])
-          errs[item.id] = `${item.label} is required`;
-      }),
-    );
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
   const handleSubmit = () => {
-    if (validate()) {
-      onSubmit({
-        itemDescription,
-        itemCodes,
-        specValues,
-        images,
-      });
-    }
+    if (!validate()) return;
+    onSubmit({
+      itemDescription: itemDescription.trim(),
+      itemCodes,
+      specValues,
+      mainImageFile: mainImageFile ?? undefined,
+      rawImageFile: rawImageFile ?? undefined,
+      images: galleryFiles,
+    });
   };
 
   if (!isOpen) return null;
 
-  // ── Section card helper ────────────────────────────────────────────────────
-  const sectionCard = (
-    children: React.ReactNode,
-    title: string,
-    subtitle?: string,
-  ) => (
-    <div
-      style={{
-        border: `1px solid ${TOKEN.border}`,
-        borderRadius: 14,
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          padding: "14px 20px",
-          borderBottom: `1px solid ${TOKEN.border}`,
-          background: TOKEN.bg,
-        }}
-      >
-        <p
-          style={{
-            margin: 0,
-            fontSize: 12,
-            fontWeight: 800,
-            color: TOKEN.textPri,
-            textTransform: "uppercase",
-            letterSpacing: "0.04em",
-          }}
-        >
-          {title}
-        </p>
-        {subtitle && (
-          <p style={{ margin: "2px 0 0", fontSize: 11, color: TOKEN.textSec }}>
+  const sectionCard = (title: string, body: React.ReactNode, subtitle?: string) => (
+    <div style={sectionCardStyle}>
+      <div style={sectionHeaderStyle}>
+        {title}
+        {subtitle ? (
+          <span
+            style={{
+              marginLeft: 8,
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: "normal",
+              textTransform: "none",
+              color: TOKEN.textSec,
+            }}
+          >
             {subtitle}
-          </p>
-        )}
+          </span>
+        ) : null}
       </div>
-      <div
-        style={{
-          padding: "18px 20px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 16,
-        }}
-      >
-        {children}
-      </div>
+      <div style={sectionBodyStyle}>{body}</div>
     </div>
   );
 
@@ -228,7 +256,6 @@ export function ProductFormSheet({
         flexDirection: "column",
       }}
     >
-      {/* Header */}
       <div
         style={{
           background: TOKEN.surface,
@@ -271,7 +298,7 @@ export function ProductFormSheet({
                   textTransform: "uppercase",
                 }}
               >
-                {productFamily.name}
+                {formData.productFamilyTitle ?? "UNSPECIFIED FAMILY"}
               </p>
             </div>
           </div>
@@ -281,7 +308,6 @@ export function ProductFormSheet({
         </div>
       </div>
 
-      {/* Scrollable form */}
       <div style={{ flex: 1, overflowY: "auto", padding: "24px" }}>
         <div
           style={{
@@ -292,8 +318,8 @@ export function ProductFormSheet({
             gap: 18,
           }}
         >
-          {/* ── Item Description ── */}
           {sectionCard(
+            "Product Description",
             <div>
               <label style={labelStyle}>
                 Item Description <span style={{ color: TOKEN.danger }}>*</span>
@@ -301,15 +327,15 @@ export function ProductFormSheet({
               <textarea
                 value={itemDescription}
                 onChange={(e) => setItemDescription(e.target.value)}
-                placeholder="Enter a detailed description of the product..."
                 rows={4}
                 style={{
                   ...inputStyle(!!errors.itemDescription),
                   resize: "vertical",
                   lineHeight: 1.6,
                 }}
+                placeholder="Enter product description"
               />
-              {errors.itemDescription && (
+              {errors.itemDescription ? (
                 <p
                   style={{
                     margin: "5px 0 0",
@@ -320,216 +346,113 @@ export function ProductFormSheet({
                 >
                   {errors.itemDescription}
                 </p>
-              )}
+              ) : null}
             </div>,
-            "Product Description",
-            "Provide a clear, detailed description",
           )}
 
-          {/* ── Item Codes — multi-brand using ItemCodesInput ── */}
           {sectionCard(
-            <>
-              <ItemCodesInput
-                value={itemCodes}
-                onChange={setItemCodes}
-                showValidationError={showItemCodeError}
-              />
-            </>,
             "Item Codes",
-            "Enter the code for each brand (at least one required)",
+            <ItemCodesInput
+              value={itemCodes}
+              onChange={setItemCodes}
+              showValidationError={showItemCodeError}
+            />,
+            "At least one required",
           )}
 
-          {/* ── Dynamic spec groups ── */}
-          {specGroups.map((group) => (
-            <div key={group.id}>
-              {sectionCard(
-                <>
-                  {group.items.map((item) => (
-                    <div key={`${group.id}-${item.id}`}>
-                      <label htmlFor={item.id} style={labelStyle}>
-                        {item.label}
-                        {item.required && (
-                          <span style={{ color: TOKEN.danger, marginLeft: 3 }}>
-                            *
-                          </span>
-                        )}
+          {specsByGroup.map((group) =>
+            sectionCard(
+              group.groupName,
+              <>
+                {group.items.map((spec) => {
+                  const fieldKey = `${spec.specGroupId}-${spec.label}`;
+                  return (
+                    <div key={spec.id}>
+                      <label htmlFor={fieldKey} style={labelStyle}>
+                        {spec.label}
                       </label>
-
-                      {(item.type === "text" || item.type === "number") && (
-                        <input
-                          id={item.id}
-                          type={item.type}
-                          value={specValues[item.id] || ""}
-                          onChange={(e) =>
-                            handleSpecChange(item.id, e.target.value)
-                          }
-                          style={inputStyle(!!errors[item.id])}
-                        />
-                      )}
-
-                      {item.type === "select" && item.options && (
-                        <select
-                          id={item.id}
-                          value={specValues[item.id] || ""}
-                          onChange={(e) =>
-                            handleSpecChange(item.id, e.target.value)
-                          }
-                          style={{
-                            ...inputStyle(!!errors[item.id]),
-                            appearance: "none",
-                            WebkitAppearance: "none",
-                            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-                            backgroundRepeat: "no-repeat",
-                            backgroundPosition: "right 14px center",
-                            paddingRight: 36,
-                          }}
-                        >
-                          <option value="">Select an option</option>
-                          {item.options.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-
-                      {errors[item.id] && (
-                        <p
-                          style={{
-                            margin: "5px 0 0",
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: TOKEN.danger,
-                          }}
-                        >
-                          {errors[item.id]}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </>,
-                group.label,
-                `${group.items.length} specification${group.items.length !== 1 ? "s" : ""}`,
-              )}
-            </div>
-          ))}
-
-          {/* ── Image upload ── */}
-          {sectionCard(
-            <>
-              {images.length > 0 && (
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))",
-                    gap: 10,
-                  }}
-                >
-                  {images.map((img, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        position: "relative",
-                        aspectRatio: "1",
-                        border: `1px solid ${TOKEN.border}`,
-                        borderRadius: 10,
-                        overflow: "hidden",
-                      }}
-                    >
-                      <img
-                        src={URL.createObjectURL(img)}
-                        alt={`Product ${i + 1}`}
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                        }}
+                      <input
+                        id={fieldKey}
+                        value={specValues[fieldKey] ?? ""}
+                        onChange={(e) => handleSpecChange(fieldKey, e.target.value)}
+                        style={inputStyle()}
+                        placeholder={`Enter ${spec.label.toLowerCase()}`}
                       />
-                      <button
-                        onClick={() => removeImage(i)}
-                        style={{
-                          position: "absolute",
-                          top: 4,
-                          right: 4,
-                          background: TOKEN.danger,
-                          border: "none",
-                          borderRadius: 5,
-                          width: 22,
-                          height: 22,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <X size={11} color="#fff" />
-                      </button>
                     </div>
-                  ))}
-                </div>
-              )}
-              <div
-                style={{
-                  border: `2px dashed ${TOKEN.border}`,
-                  borderRadius: 10,
-                  padding: "28px 16px",
-                  textAlign: "center",
-                  background: TOKEN.bg,
-                }}
-              >
-                <input
-                  type="file"
-                  id="image-upload"
-                  style={{ display: "none" }}
-                  accept="image/*"
-                  multiple
-                  onChange={handleImageUpload}
-                />
-                <label htmlFor="image-upload" style={{ cursor: "pointer" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    <Upload
-                      size={24}
-                      color={TOKEN.textSec}
-                      style={{ opacity: 0.5 }}
-                    />
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: TOKEN.textSec,
-                      }}
-                    >
-                      Upload images
+                  );
+                })}
+              </>,
+              `${group.items.length} specification${group.items.length !== 1 ? "s" : ""}`,
+            ),
+          )}
+
+          {sectionCard(
+            "Product Images",
+            <>
+              <div {...mainDropzone.getRootProps()} style={dropzoneStyle(mainDropzone.isDragActive)}>
+                <input {...mainDropzone.getInputProps()} />
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Upload size={18} color={TOKEN.textSec} />
+                  <div>
+                    <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: TOKEN.textPri }}>
+                      Main Image
                     </p>
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: 11,
-                        color: TOKEN.textSec,
-                        opacity: 0.7,
-                      }}
-                    >
-                      Click to browse or drag and drop
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: TOKEN.textSec }}>
+                      {mainImageFile ? mainImageFile.name : "Drop or click to upload"}
                     </p>
                   </div>
-                </label>
+                </div>
               </div>
+
+              <div {...rawDropzone.getRootProps()} style={dropzoneStyle(rawDropzone.isDragActive)}>
+                <input {...rawDropzone.getInputProps()} />
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Upload size={18} color={TOKEN.textSec} />
+                  <div>
+                    <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: TOKEN.textPri }}>
+                      Raw Image
+                    </p>
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: TOKEN.textSec }}>
+                      {rawImageFile ? rawImageFile.name : "Drop or click to upload"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div {...galleryDropzone.getRootProps()} style={dropzoneStyle(galleryDropzone.isDragActive)}>
+                <input {...galleryDropzone.getInputProps()} />
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <Upload size={18} color={TOKEN.textSec} />
+                  <div>
+                    <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: TOKEN.textPri }}>
+                      Gallery Images
+                    </p>
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: TOKEN.textSec }}>
+                      Drop multiple files or click to upload
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {galleryFiles.length > 0 ? (
+                <div
+                  style={{
+                    border: `1px solid ${TOKEN.border}`,
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                    background: TOKEN.bg,
+                  }}
+                >
+                  <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: TOKEN.textPri }}>
+                    {galleryFiles.length} file{galleryFiles.length !== 1 ? "s" : ""} selected
+                  </p>
+                </div>
+              ) : null}
             </>,
-            "Product Images",
-            "Upload product images (optional)",
           )}
         </div>
       </div>
 
-      {/* Footer */}
       <div
         style={{
           background: TOKEN.surface,

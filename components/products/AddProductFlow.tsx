@@ -1,111 +1,150 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { TOKEN } from "@/components/layout/tokens";
 import { ProductFamilyModal } from "./ProductFamilyModal";
 import { ProductClassSelection } from "./ProductClassSelection";
 import { ProductFormSheet } from "./ProductFormSheet";
 import { TDSPreview } from "./TDSPreview";
 import type { ItemCodes } from "@/types/product";
-
-export type ProductClass = "standard" | "nonstandard" | "spf" | "usl";
-
-export interface SpecItem {
-  id: string;
-  label: string;
-  type: "text" | "number" | "select";
-  options?: string[];
-  required?: boolean;
-}
-
-export interface SpecGroup {
-  id: string;
-  label: string;
-  items: SpecItem[];
-}
+import type { AvailableSpecItem, FlowStep, ProductClass, ProductFormData } from "./types";
 
 export interface ProductFamily {
   id: string;
-  name: string;
+  title?: string;
+  name?: string;
   description?: string;
-  availableSpecGroups: SpecGroup[];
+  specs?: Array<{ specGroupId: string; specItems?: Array<{ name?: string; label?: string }> }>;
+  productUsage?: string[];
 }
-
-export interface ProductFormData {
-  productFamilyId: string;
-  productClass: ProductClass;
-  itemDescription: string;
-  /** Multi-brand item codes — stored as { ECOSHIFT?: string; LIT?: string; LUMERA?: string; OKO?: string; ZUMTOBEL?: string } */
-  itemCodes: ItemCodes;
-  selectedSpecGroups: string[];
-  specValues: Record<string, any>;
-  images: File[];
-}
-
-type FlowStep =
-  | "idle"
-  | "family-selection"
-  | "class-selection"
-  | "form"
-  | "preview"
-  | "complete";
 
 interface AddProductFlowProps {
-  productFamilies: ProductFamily[];
-  onSubmit: (data: ProductFormData) => Promise<void>;
+  productFamilies?: ProductFamily[];
+  onSubmit: (data: ProductFormData) => Promise<void> | void;
   onCancel?: () => void;
 }
 
 export function AddProductFlow({
-  productFamilies,
   onSubmit,
   onCancel,
 }: AddProductFlowProps) {
   const [currentStep, setCurrentStep] = useState<FlowStep>("idle");
+  const [rawFamilyDocs, setRawFamilyDocs] = useState<any[]>([]);
+  const [rawSpecGroupDocs, setRawSpecGroupDocs] = useState<any[]>([]);
   const [formData, setFormData] = useState<Partial<ProductFormData>>({
-    itemCodes: {} as ItemCodes,
-    selectedSpecGroups: [],
+    itemCodes: {},
+    selectedSpecGroupIds: [],
+    availableSpecs: [],
     specValues: {},
     images: [],
+    productUsage: [],
+    productClass: "",
+    productFamilyId: "",
+    productFamilyTitle: "",
+    itemDescription: "",
+    brand: "",
   });
 
-  // Get the selected product family
-  const selectedFamily = productFamilies.find(
-    (f) => f.id === formData.productFamilyId,
+  useEffect(() => {
+    const q = query(collection(db, "productfamilies"), orderBy("createdAt", "desc"));
+    return onSnapshot(q, (snap) => {
+      setRawFamilyDocs(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, "specs"), orderBy("createdAt", "desc"));
+    return onSnapshot(q, (snap) => {
+      setRawSpecGroupDocs(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+  }, []);
+
+  const allSpecGroups = useMemo(
+    () =>
+      rawSpecGroupDocs.map((g) => ({
+        id: g.id,
+        name: g.name ?? g.id,
+        items: Array.isArray(g.items) ? g.items : [],
+      })),
+    [rawSpecGroupDocs],
   );
 
-  // Get filtered spec groups based on selection
-  const activeSpecGroups = selectedFamily?.availableSpecGroups.filter((group) =>
-    formData.selectedSpecGroups?.includes(group.id),
+  const handleFamilySelect = useCallback(
+    (payload: {
+      familyId: string;
+      familyTitle: string;
+      selectedSpecGroupIds: string[];
+      availableSpecs: AvailableSpecItem[];
+      productUsage: string[];
+    }) => {
+      setFormData((prev) => ({
+        ...prev,
+        productFamilyId: payload.familyId,
+        productFamilyTitle: (payload.familyTitle ?? "").toUpperCase(),
+        selectedSpecGroupIds: payload.selectedSpecGroupIds,
+        availableSpecs: payload.availableSpecs,
+        productUsage: payload.productUsage,
+      }));
+      setCurrentStep("class-selection");
+    },
+    [],
   );
 
-  const handleFamilySelect = (familyId: string, selectedGroups: string[]) => {
+  const handleClassSelect = useCallback((productClass: ProductClass) => {
     setFormData((prev) => ({
       ...prev,
-      productFamilyId: familyId,
-      selectedSpecGroups: selectedGroups,
+      productClass,
     }));
-    setCurrentStep("class-selection");
-  };
-
-  const handleClassSelect = (productClass: ProductClass) => {
-    setFormData((prev) => ({ ...prev, productClass }));
     setCurrentStep("form");
-  };
+  }, []);
 
-  const handleFormSubmit = (data: Partial<ProductFormData>) => {
+  const handleFormSubmit = useCallback((data: Partial<ProductFormData>) => {
     setFormData((prev) => ({ ...prev, ...data }));
     setCurrentStep("preview");
-  };
+  }, []);
 
-  const handlePreviewConfirm = async () => {
-    if (formData as ProductFormData) {
-      await onSubmit(formData as ProductFormData);
-      setCurrentStep("complete");
+  const handlePreviewConfirm = useCallback(async () => {
+    if (!formData.productFamilyId || !formData.productFamilyTitle) return;
+    const completeData: ProductFormData = {
+      productFamilyId: formData.productFamilyId,
+      productFamilyTitle: formData.productFamilyTitle,
+      productUsage: formData.productUsage ?? [],
+      selectedSpecGroupIds: formData.selectedSpecGroupIds ?? [],
+      availableSpecs: formData.availableSpecs ?? [],
+      productClass: formData.productClass ?? "",
+      itemDescription: formData.itemDescription ?? "",
+      itemCodes: (formData.itemCodes ?? {}) as ItemCodes,
+      specValues: formData.specValues ?? {},
+      mainImageFile: formData.mainImageFile,
+      rawImageFile: formData.rawImageFile,
+      images: formData.images ?? [],
+      brand: formData.brand ?? "",
+    };
+
+    try {
+      await onSubmit(completeData);
+      setCurrentStep("idle");
+      setFormData({
+        itemCodes: {},
+        selectedSpecGroupIds: [],
+        availableSpecs: [],
+        specValues: {},
+        images: [],
+        productUsage: [],
+        productClass: "",
+        productFamilyId: "",
+        productFamilyTitle: "",
+        itemDescription: "",
+        brand: "",
+      });
+    } catch {
+      // Parent handles toast + keeping user on preview state.
     }
-  };
+  }, [formData, onSubmit]);
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     switch (currentStep) {
       case "class-selection":
         setCurrentStep("family-selection");
@@ -119,22 +158,28 @@ export function AddProductFlow({
       default:
         break;
     }
-  };
+  }, [currentStep]);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setFormData({
-      itemCodes: {} as ItemCodes,
-      selectedSpecGroups: [],
+      itemCodes: {},
+      selectedSpecGroupIds: [],
+      availableSpecs: [],
       specValues: {},
       images: [],
+      productUsage: [],
+      productClass: "",
+      productFamilyId: "",
+      productFamilyTitle: "",
+      itemDescription: "",
+      brand: "",
     });
     setCurrentStep("idle");
     onCancel?.();
-  };
+  }, [onCancel]);
 
   return (
     <>
-      {/* Entry Point Button */}
       {currentStep === "idle" && (
         <button
           onClick={() => setCurrentStep("family-selection")}
@@ -142,7 +187,7 @@ export function AddProductFlow({
             display: "inline-flex",
             alignItems: "center",
             gap: 8,
-            padding: "10px 20px",
+            padding: "10px 18px",
             borderRadius: 12,
             border: "none",
             background: TOKEN.primary,
@@ -156,15 +201,14 @@ export function AddProductFlow({
         </button>
       )}
 
-      {/* Step 1: Product Family Selection Modal */}
       <ProductFamilyModal
         isOpen={currentStep === "family-selection"}
         onClose={handleReset}
-        productFamilies={productFamilies}
+        rawFamilyDocs={rawFamilyDocs}
+        rawSpecGroupDocs={rawSpecGroupDocs}
         onSelect={handleFamilySelect}
       />
 
-      {/* Step 2: Product Class Selection */}
       {currentStep === "class-selection" && (
         <ProductClassSelection
           onSelect={handleClassSelect}
@@ -173,30 +217,28 @@ export function AddProductFlow({
         />
       )}
 
-      {/* Step 3: Product Form (Fullscreen Sheet) */}
-      {currentStep === "form" && selectedFamily && (
+      {currentStep === "form" && (
         <ProductFormSheet
           isOpen={true}
           onClose={handleReset}
           onSubmit={handleFormSubmit}
           onBack={handleBack}
-          productFamily={selectedFamily}
-          specGroups={activeSpecGroups || []}
-          initialData={formData}
+          formData={formData}
+          allSpecGroups={allSpecGroups}
         />
       )}
 
-      {/* Step 4: TDS Preview */}
-      {currentStep === "preview" && selectedFamily && (
+      {currentStep === "preview" && (
         <TDSPreview
           isOpen={true}
           onClose={handleReset}
           onConfirm={handlePreviewConfirm}
           onBack={handleBack}
           formData={formData as ProductFormData}
-          productFamily={selectedFamily}
         />
       )}
     </>
   );
 }
+
+export type { ProductClass, ProductFormData };

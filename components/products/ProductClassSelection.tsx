@@ -4,7 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
 import { TOKEN, SPRING_MED } from "@/components/layout/tokens";
-import type { ProductClass } from "./AddProductFlow";
+import type { ProductClass } from "./types";
 
 interface ProductClassSelectionProps {
   onSelect: (productClass: ProductClass) => void;
@@ -20,10 +20,8 @@ interface ClassOption {
 }
 
 const productClasses: ClassOption[] = [
-  { value: "standard",    label: "Standard",     description: "Regular production items with standard specifications and pricing", icon: "📦" },
-  { value: "nonstandard", label: "Non-Standard",  description: "Custom or modified items with non-standard specifications", icon: "🔧" },
-  { value: "spf",         label: "SPF",           description: "Special Purpose Formulation items for specific applications", icon: "⚗️" },
-  { value: "usl",         label: "USL",           description: "Universal Service Line items for broad compatibility", icon: "🌐" },
+  { value: "standard", label: "Standard", description: "Regular production items with standard specifications and pricing", icon: "📦" },
+  { value: "spf", label: "SPF", description: "Special Purpose Formulation items for specific applications", icon: "⚗️" },
 ];
 
 const outlineBtn: React.CSSProperties = {

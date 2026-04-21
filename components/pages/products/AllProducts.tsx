@@ -14,6 +14,8 @@ import {
   orderBy,
   onSnapshot,
   addDoc,
+  doc,
+  updateDoc,
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -64,6 +66,9 @@ import type {
   ProductFamily as AddFlowFamily,
   ProductFormData as AddFlowFormData,
 } from "@/components/products/AddProductFlow";
+import { slugify } from "@/components/products/utils";
+import { logAuditEvent } from "@/lib/logger";
+import { getPrimaryItemCode, type ItemCodes } from "@/types/product";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -671,62 +676,169 @@ export default function AllProductsPage() {
   // ── Add Product submit ───────────────────────────────────────────────────────
   const handleAddProductSubmit = useCallback(
     async (formData: AddFlowFormData) => {
-      const CLOUDINARY_CLOUD_NAME = "dvmpn8mjh";
-      const CLOUDINARY_UPLOAD_PRESET = "taskflow_preset";
+      const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "";
+      const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET ?? "";
+
+      const uploadToCloud = async (file: File): Promise<string> => {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("upload_preset", UPLOAD_PRESET);
+        const res = await fetch(
+          `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
+          { method: "POST", body: fd },
+        );
+        const json = await res.json();
+        if (!json?.secure_url) throw new Error("Cloudinary upload failed");
+        return json.secure_url as string;
+      };
 
       try {
-        // Resolve family title for the products collection
-        const family = rawFamilyDocs.find(
-          (f) => f.id === formData.productFamilyId,
+        const mainUrl = formData.mainImageFile
+          ? await uploadToCloud(formData.mainImageFile)
+          : "";
+        const rawUrl = formData.rawImageFile
+          ? await uploadToCloud(formData.rawImageFile)
+          : mainUrl;
+        const galleryUrls = await Promise.all(
+          (formData.images ?? []).map(uploadToCloud),
         );
-        const productFamily = (
-          family?.title ?? formData.productFamilyId
-        ).toUpperCase();
 
-        // Upload images to Cloudinary
-        const uploadedUrls: string[] = [];
-        for (const file of formData.images) {
+        const itemCodesObj = Object.fromEntries(
+          Object.entries(formData.itemCodes ?? {}).filter(([, value]) =>
+            Boolean(value?.trim()),
+          ),
+        );
+        const itemCodesTyped = itemCodesObj as ItemCodes;
+        const resolvedEco = itemCodesTyped.ECOSHIFT ?? "";
+        const resolvedLit = itemCodesTyped.LIT ?? "";
+        const resolvedBrand = resolvedLit ? "LIT" : resolvedEco ? "ECOSHIFT" : "";
+        const primary = getPrimaryItemCode(itemCodesTyped);
+
+        const specsGrouped: Record<string, { name: string; value: string }[]> = {};
+        Object.entries(formData.specValues ?? {}).forEach(([key, rawValue]) => {
+          const value = (rawValue ?? "").toString().trim();
+          if (!value) return;
+          const spec = (formData.availableSpecs ?? []).find(
+            (s) => `${s.specGroupId}-${s.label}` === key,
+          );
+          if (!spec) return;
+          if (!specsGrouped[spec.specGroup]) specsGrouped[spec.specGroup] = [];
+          specsGrouped[spec.specGroup].push({
+            name: spec.label.toUpperCase().trim(),
+            value: value.toUpperCase().trim(),
+          });
+        });
+
+        const technicalSpecs = Object.entries(specsGrouped)
+          .map(([specGroup, specs]) => ({
+            specGroup: specGroup.toUpperCase().trim(),
+            specs,
+          }))
+          .filter((group) => group.specs.length > 0);
+
+        const payload = {
+          productClass: formData.productClass ?? "",
+          itemDescription: formData.itemDescription ?? "",
+          shortDescription: "",
+          slug: slugify(formData.itemDescription ?? ""),
+          itemCodes: itemCodesObj,
+          ecoItemCode: resolvedEco,
+          litItemCode: resolvedLit,
+          regularPrice: 0,
+          salePrice: 0,
+          technicalSpecs,
+          mainImage: mainUrl,
+          rawImage: rawUrl,
+          qrCodeImage: "",
+          galleryImages: galleryUrls,
+          dimensionalDrawingImage: "",
+          recommendedMountingHeightImage: "",
+          driverCompatibilityImage: "",
+          baseImage: "",
+          illuminanceLevelImage: "",
+          wiringDiagramImage: "",
+          installationImage: "",
+          wiringLayoutImage: "",
+          terminalLayoutImage: "",
+          accessoriesImage: "",
+          typeOfPlugImage: "",
+          website: [] as string[],
+          websites: [] as string[],
+          productFamily: (formData.productFamilyTitle ?? "").toUpperCase(),
+          brand: resolvedBrand,
+          applications: [] as string[],
+          productUsage: formData.productUsage ?? [],
+          status: "draft" as const,
+          seo: {
+            itemDescription: formData.itemDescription ?? "",
+            description: "",
+            canonical: "",
+            ogImage: mainUrl,
+            robots: "index, follow",
+            lastUpdated: new Date().toISOString(),
+          },
+          importSource: "add-new-product-form",
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        };
+
+        const docRef = await addDoc(collection(db, "products"), payload);
+
+        if (technicalSpecs.length > 0) {
           try {
-            const fd = new FormData();
-            fd.append("file", file);
-            fd.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-            const res = await fetch(
-              `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-              { method: "POST", body: fd },
+            const { generateTdsPdf, uploadTdsPdf, normaliseBrand } = await import(
+              "@/lib/tdsGenerator"
             );
-            const json = await res.json();
-            if (json?.secure_url) uploadedUrls.push(json.secure_url);
-          } catch {
-            // Skip individual upload failures; continue with others
+            const tdsBlob = await generateTdsPdf({
+              itemDescription: formData.itemDescription ?? "",
+              itemCodes: itemCodesTyped,
+              technicalSpecs,
+              brand: normaliseBrand(resolvedBrand),
+              includeBrandAssets: false,
+              mainImageUrl: mainUrl || undefined,
+            });
+            const primaryCode =
+              primary?.code ?? formData.itemDescription ?? docRef.id;
+            const tdsUrl = await uploadTdsPdf(
+              tdsBlob,
+              `${primaryCode}_TDS.pdf`,
+              CLOUD_NAME,
+              UPLOAD_PRESET,
+            );
+            if (tdsUrl.startsWith("http")) {
+              await updateDoc(doc(db, "products", docRef.id), {
+                tdsFileUrl: tdsUrl,
+                updatedAt: serverTimestamp(),
+              });
+            }
+          } catch (tdsErr) {
+            const message =
+              tdsErr instanceof Error ? tdsErr.message : "Unknown TDS error";
+            console.warn("[AddProduct] TDS generation failed:", message);
           }
         }
 
-        // itemCodes: Record<string,string> → filter empty values, then save directly
-        const itemCodesObj = Object.fromEntries(
-          Object.entries(formData.itemCodes || {}).filter(([, v]) => v.trim()),
-        );
-
-        await addDoc(collection(db, "products"), {
-          name: formData.itemDescription,
-          itemDescription: formData.itemDescription,
-          productFamily,
-          productClass: formData.productClass,
-          itemCodes: itemCodesObj,
-          specifications: formData.specValues,
-          mainImage: uploadedUrls[0] ?? "",
-          rawImage: uploadedUrls,
-          websites: [],
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
+        await logAuditEvent({
+          action: "create",
+          entityType: "product",
+          entityId: docRef.id,
+          entityName: formData.itemDescription ?? "",
+          context: {
+            page: "/products/all-products",
+            source: "add-new-product-form",
+            collection: "products",
+          },
         });
 
         toast.success("Product created successfully");
-      } catch (err: any) {
-        toast.error(err?.message ?? "Failed to create product");
-        throw err; // re-throw so AddProductFlow stays on preview step
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to create product";
+        toast.error(message);
+        throw err;
       }
     },
-    [rawFamilyDocs],
+    [],
   );
 
   // ── Long-press to select (mobile) ───────────────────────────────────────────

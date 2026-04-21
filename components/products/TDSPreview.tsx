@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, Download, Loader2 } from "lucide-react";
 import { TOKEN } from "@/components/layout/tokens";
-import type { ProductFormData, ProductFamily } from "./AddProductFlow";
+import type { ProductFormData } from "./types";
 
 interface TDSPreviewProps {
   isOpen: boolean;
@@ -11,7 +11,6 @@ interface TDSPreviewProps {
   onConfirm: () => Promise<void>;
   onBack: () => void;
   formData: ProductFormData;
-  productFamily: ProductFamily;
 }
 
 const btnPrimary = (disabled: boolean): React.CSSProperties => ({
@@ -42,7 +41,11 @@ const iconBtn = (disabled?: boolean): React.CSSProperties => ({
 });
 
 export function TDSPreview({
-  isOpen, onClose, onConfirm, onBack, formData, productFamily,
+  isOpen,
+  onClose,
+  onConfirm,
+  onBack,
+  formData,
 }: TDSPreviewProps) {
   const [tdsHtml, setTdsHtml] = useState("");
   const [isGenerating, setIsGenerating] = useState(true);
@@ -52,7 +55,7 @@ export function TDSPreview({
     if (isOpen) {
       setIsGenerating(true);
       try {
-        setTdsHtml(generateBlankTDS(formData, productFamily));
+        setTdsHtml(generateBlankTDS(formData));
       } catch (err) {
         console.error("Error generating TDS:", err);
       } finally {
@@ -178,16 +181,33 @@ export function TDSPreview({
 
 // ── TDS template generator ────────────────────────────────────────────────────
 
-function generateBlankTDS(formData: ProductFormData, productFamily: ProductFamily): string {
-  const specs = Object.entries(formData.specValues)
-    .map(([key, value]) => {
-      let label = key;
-      productFamily.availableSpecGroups.forEach((group) => {
-        const item = group.items.find((i) => i.id === key);
-        if (item) label = item.label;
-      });
-      return `<tr><td class="spec-label">${label}</td><td class="spec-value">${value || "—"}</td></tr>`;
-    })
+function generateBlankTDS(formData: ProductFormData): string {
+  const codeRows = Object.entries(formData.itemCodes || {})
+    .filter(([, v]) => v && v.trim())
+    .map(([brand, code]) => `<li><strong>${brand}</strong>: ${code}</li>`)
+    .join("");
+
+  const groupMap = new Map<string, { groupName: string; rows: string[] }>();
+  (formData.availableSpecs ?? []).forEach((spec) => {
+    const key = `${spec.specGroupId}-${spec.label}`;
+    const value = formData.specValues?.[key] ?? "";
+    if (!groupMap.has(spec.specGroupId)) {
+      groupMap.set(spec.specGroupId, { groupName: spec.specGroup, rows: [] });
+    }
+    groupMap
+      .get(spec.specGroupId)
+      ?.rows.push(
+        `<tr><td class="spec-label">${spec.label}</td><td class="spec-value">${value || "—"}</td></tr>`,
+      );
+  });
+
+  const specs = Array.from(groupMap.values())
+    .map(
+      (group) => `
+        <tr><td class="spec-group" colspan="2">${group.groupName}</td></tr>
+        ${group.rows.join("")}
+      `,
+    )
     .join("");
 
   return `<!DOCTYPE html>
@@ -211,6 +231,7 @@ function generateBlankTDS(formData: ProductFormData, productFamily: ProductFamil
     .specs-table { width: 100%; border-collapse: collapse; }
     .specs-table tr { border-bottom: 1px solid #e2e8f0; }
     .specs-table td { padding: 0.75rem 0; }
+    .spec-group { font-weight: 700; color: #1e40af; padding-top: 1rem; }
     .spec-label { font-weight: 500; color: #475569; width: 40%; }
     .spec-value { color: #0f172a; }
     .codes-list { list-style: none; }
@@ -222,7 +243,7 @@ function generateBlankTDS(formData: ProductFormData, productFamily: ProductFamil
   <div class="tds-container">
     <div class="header">
       <h1>Technical Data Sheet</h1>
-      <div class="subtitle">${productFamily.name} • ${formData.productClass?.toUpperCase()}</div>
+      <div class="subtitle">${formData.productFamilyTitle} • ${formData.productClass?.toUpperCase()}</div>
     </div>
     <div class="section">
       <h2 class="section-title">Product Information</h2>
@@ -230,16 +251,14 @@ function generateBlankTDS(formData: ProductFormData, productFamily: ProductFamil
         <div class="info-label">Description:</div>
         <div class="info-value">${formData.itemDescription}</div>
         <div class="info-label">Product Family:</div>
-        <div class="info-value">${productFamily.name}</div>
+        <div class="info-value">${formData.productFamilyTitle}</div>
         <div class="info-label">Classification:</div>
         <div class="info-value">${formData.productClass?.toUpperCase()}</div>
       </div>
     </div>
     <div class="section">
       <h2 class="section-title">Item Codes</h2>
-      <ul class="codes-list">
-        ${Object.entries(formData.itemCodes || {}).filter(([, v]) => v).map(([k, v]) => `<li><strong>${k}</strong>: ${v}</li>`).join("")}
-      </ul>
+      <ul class="codes-list">${codeRows}</ul>
     </div>
     <div class="section">
       <h2 class="section-title">Technical Specifications</h2>
