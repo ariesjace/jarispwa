@@ -18,7 +18,11 @@ interface ProductFormSheetProps {
   onSubmit: (data: Partial<ProductFormData>) => void;
   onBack: () => void;
   formData: Partial<ProductFormData>;
-  allSpecGroups: Array<{ id: string; name: string; items: { label: string }[] }>;
+  allSpecGroups: Array<{
+    id: string;
+    name: string;
+    items: { label: string }[];
+  }>;
 }
 
 const labelStyle: React.CSSProperties = {
@@ -124,11 +128,15 @@ function groupSpecs(
   specs: AvailableSpecItem[],
   allSpecGroups: Array<{ id: string; name: string }>,
 ) {
-  const map = new Map<string, { groupName: string; items: AvailableSpecItem[] }>();
+  const map = new Map<
+    string,
+    { groupName: string; items: AvailableSpecItem[] }
+  >();
   specs.forEach((spec) => {
     if (!map.has(spec.specGroupId)) {
       const fallbackName =
-        allSpecGroups.find((g) => g.id === spec.specGroupId)?.name ?? spec.specGroupId;
+        allSpecGroups.find((g) => g.id === spec.specGroupId)?.name ??
+        spec.specGroupId;
       map.set(spec.specGroupId, {
         groupName: spec.specGroup || fallbackName,
         items: [],
@@ -143,6 +151,82 @@ function groupSpecs(
   }));
 }
 
+type TechnicalImageFieldKey =
+  | "dimensionalDrawingImageFile"
+  | "recommendedMountingHeightImageFile"
+  | "driverCompatibilityImageFile"
+  | "baseImageFile"
+  | "illuminanceLevelImageFile"
+  | "wiringDiagramImageFile"
+  | "installationImageFile"
+  | "wiringLayoutImageFile"
+  | "terminalLayoutImageFile"
+  | "accessoriesImageFile";
+
+const TECHNICAL_IMAGE_FIELDS: Array<{
+  key: TechnicalImageFieldKey;
+  label: string;
+}> = [
+  { key: "dimensionalDrawingImageFile", label: "Dimensional Drawing" },
+  {
+    key: "recommendedMountingHeightImageFile",
+    label: "Recommended Mounting Height",
+  },
+  { key: "driverCompatibilityImageFile", label: "Driver Compatibility" },
+  { key: "baseImageFile", label: "Base Image" },
+  { key: "illuminanceLevelImageFile", label: "Illuminance Level" },
+  { key: "wiringDiagramImageFile", label: "Wiring Diagram" },
+  { key: "installationImageFile", label: "Installation" },
+  { key: "wiringLayoutImageFile", label: "Wiring Layout" },
+  { key: "terminalLayoutImageFile", label: "Terminal Layout" },
+  { key: "accessoriesImageFile", label: "Accessories" },
+];
+
+function TechnicalImageUploadField({
+  label,
+  file,
+  onChange,
+}: {
+  label: string;
+  file: File | null;
+  onChange: (file: File | null) => void;
+}) {
+  const techDropzone = useDropzone({
+    multiple: false,
+    accept: { "image/*": [] },
+    onDrop: (acceptedFiles) => {
+      onChange(acceptedFiles[0] ?? null);
+    },
+  });
+
+  return (
+    <div
+      {...techDropzone.getRootProps()}
+      style={dropzoneStyle(techDropzone.isDragActive)}
+    >
+      <input {...techDropzone.getInputProps()} />
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Upload size={18} color={TOKEN.textSec} />
+        <div>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 12.5,
+              fontWeight: 700,
+              color: TOKEN.textPri,
+            }}
+          >
+            {label}
+          </p>
+          <p style={{ margin: "2px 0 0", fontSize: 11, color: TOKEN.textSec }}>
+            {file ? file.name : "Drop or click to upload"}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ProductFormSheet({
   isOpen,
   onClose,
@@ -151,12 +235,41 @@ export function ProductFormSheet({
   formData,
   allSpecGroups,
 }: ProductFormSheetProps) {
-  const [itemDescription, setItemDescription] = useState(formData.itemDescription ?? "");
-  const [itemCodes, setItemCodes] = useState<ItemCodes>(formData.itemCodes ?? {});
-  const [specValues, setSpecValues] = useState<Record<string, string>>(formData.specValues ?? {});
-  const [mainImageFile, setMainImageFile] = useState<File | null>(formData.mainImageFile ?? null);
-  const [rawImageFile, setRawImageFile] = useState<File | null>(formData.rawImageFile ?? null);
-  const [galleryFiles, setGalleryFiles] = useState<File[]>(formData.images ?? []);
+  const [itemDescription, setItemDescription] = useState(
+    formData.itemDescription ?? "",
+  );
+  const [itemCodes, setItemCodes] = useState<ItemCodes>(
+    formData.itemCodes ?? {},
+  );
+  const [specValues, setSpecValues] = useState<Record<string, string>>(
+    formData.specValues ?? {},
+  );
+  const [mainImageFile, setMainImageFile] = useState<File | null>(
+    formData.mainImageFile ?? null,
+  );
+  const [rawImageFile, setRawImageFile] = useState<File | null>(
+    formData.rawImageFile ?? null,
+  );
+  const [galleryFiles, setGalleryFiles] = useState<File[]>(
+    formData.images ?? [],
+  );
+  const [technicalImageFiles, setTechnicalImageFiles] = useState<
+    Record<TechnicalImageFieldKey, File | null>
+  >({
+    dimensionalDrawingImageFile: formData.dimensionalDrawingImageFile ?? null,
+    recommendedMountingHeightImageFile:
+      formData.recommendedMountingHeightImageFile ?? null,
+    driverCompatibilityImageFile: formData.driverCompatibilityImageFile ?? null,
+    baseImageFile: formData.baseImageFile ?? null,
+    illuminanceLevelImageFile: formData.illuminanceLevelImageFile ?? null,
+    wiringDiagramImageFile: formData.wiringDiagramImageFile ?? null,
+    installationImageFile: formData.installationImageFile ?? null,
+    wiringLayoutImageFile: formData.wiringLayoutImageFile ?? null,
+    terminalLayoutImageFile: formData.terminalLayoutImageFile ?? null,
+    accessoriesImageFile: formData.accessoriesImageFile ?? null,
+  });
+  const [regPrice, setRegPrice] = useState(formData.regPrice ?? "");
+  const [salePrice, setSalePrice] = useState(formData.salePrice ?? "");
   const [showItemCodeError, setShowItemCodeError] = useState(false);
   const [errors, setErrors] = useState<ValidationErrors>({});
 
@@ -192,6 +305,12 @@ export function ProductFormSheet({
   const handleSpecChange = (key: string, value: string) => {
     setSpecValues((prev) => ({ ...prev, [key]: value }));
   };
+  const handleTechnicalImageChange = (
+    key: TechnicalImageFieldKey,
+    file: File | null,
+  ) => {
+    setTechnicalImageFiles((prev) => ({ ...prev, [key]: file }));
+  };
 
   const validate = (): boolean => {
     const errs: ValidationErrors = {};
@@ -217,12 +336,37 @@ export function ProductFormSheet({
       mainImageFile: mainImageFile ?? undefined,
       rawImageFile: rawImageFile ?? undefined,
       images: galleryFiles,
+      dimensionalDrawingImageFile:
+        technicalImageFiles.dimensionalDrawingImageFile ?? undefined,
+      recommendedMountingHeightImageFile:
+        technicalImageFiles.recommendedMountingHeightImageFile ?? undefined,
+      driverCompatibilityImageFile:
+        technicalImageFiles.driverCompatibilityImageFile ?? undefined,
+      baseImageFile: technicalImageFiles.baseImageFile ?? undefined,
+      illuminanceLevelImageFile:
+        technicalImageFiles.illuminanceLevelImageFile ?? undefined,
+      wiringDiagramImageFile:
+        technicalImageFiles.wiringDiagramImageFile ?? undefined,
+      installationImageFile:
+        technicalImageFiles.installationImageFile ?? undefined,
+      wiringLayoutImageFile:
+        technicalImageFiles.wiringLayoutImageFile ?? undefined,
+      terminalLayoutImageFile:
+        technicalImageFiles.terminalLayoutImageFile ?? undefined,
+      accessoriesImageFile:
+        technicalImageFiles.accessoriesImageFile ?? undefined,
+      regPrice: regPrice.trim(),
+      salePrice: salePrice.trim(),
     });
   };
 
   if (!isOpen) return null;
 
-  const sectionCard = (title: string, body: React.ReactNode, subtitle?: string) => (
+  const sectionCard = (
+    title: string,
+    body: React.ReactNode,
+    subtitle?: string,
+  ) => (
     <div style={sectionCardStyle}>
       <div style={sectionHeaderStyle}>
         {title}
@@ -309,147 +453,271 @@ export function ProductFormSheet({
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: "24px" }}>
-        <div
-          style={{
-            maxWidth: 860,
-            margin: "0 auto",
-            display: "flex",
-            flexDirection: "column",
-            gap: 18,
-          }}
-        >
-          {sectionCard(
-            "Product Description",
-            <div>
-              <label style={labelStyle}>
-                Item Description <span style={{ color: TOKEN.danger }}>*</span>
-              </label>
-              <textarea
-                value={itemDescription}
-                onChange={(e) => setItemDescription(e.target.value)}
-                rows={4}
-                style={{
-                  ...inputStyle(!!errors.itemDescription),
-                  resize: "vertical",
-                  lineHeight: 1.6,
-                }}
-                placeholder="Enter product description"
-              />
-              {errors.itemDescription ? (
-                <p
-                  style={{
-                    margin: "5px 0 0",
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: TOKEN.danger,
-                  }}
-                >
-                  {errors.itemDescription}
-                </p>
-              ) : null}
-            </div>,
-          )}
-
-          {sectionCard(
-            "Item Codes",
-            <ItemCodesInput
-              value={itemCodes}
-              onChange={setItemCodes}
-              showValidationError={showItemCodeError}
-            />,
-            "At least one required",
-          )}
-
-          {specsByGroup.map((group) =>
-            sectionCard(
-              group.groupName,
-              <>
-                {group.items.map((spec) => {
-                  const fieldKey = `${spec.specGroupId}-${spec.label}`;
-                  return (
-                    <div key={spec.id}>
-                      <label htmlFor={fieldKey} style={labelStyle}>
-                        {spec.label}
-                      </label>
-                      <input
-                        id={fieldKey}
-                        value={specValues[fieldKey] ?? ""}
-                        onChange={(e) => handleSpecChange(fieldKey, e.target.value)}
-                        style={inputStyle()}
-                        placeholder={`Enter ${spec.label.toLowerCase()}`}
-                      />
-                    </div>
-                  );
-                })}
-              </>,
-              `${group.items.length} specification${group.items.length !== 1 ? "s" : ""}`,
-            ),
-          )}
-
-          {sectionCard(
-            "Product Images",
-            <>
-              <div {...mainDropzone.getRootProps()} style={dropzoneStyle(mainDropzone.isDragActive)}>
-                <input {...mainDropzone.getInputProps()} />
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <Upload size={18} color={TOKEN.textSec} />
-                  <div>
-                    <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: TOKEN.textPri }}>
-                      Main Image
-                    </p>
-                    <p style={{ margin: "2px 0 0", fontSize: 11, color: TOKEN.textSec }}>
-                      {mainImageFile ? mainImageFile.name : "Drop or click to upload"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div {...rawDropzone.getRootProps()} style={dropzoneStyle(rawDropzone.isDragActive)}>
-                <input {...rawDropzone.getInputProps()} />
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <Upload size={18} color={TOKEN.textSec} />
-                  <div>
-                    <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: TOKEN.textPri }}>
-                      Raw Image
-                    </p>
-                    <p style={{ margin: "2px 0 0", fontSize: 11, color: TOKEN.textSec }}>
-                      {rawImageFile ? rawImageFile.name : "Drop or click to upload"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div {...galleryDropzone.getRootProps()} style={dropzoneStyle(galleryDropzone.isDragActive)}>
-                <input {...galleryDropzone.getInputProps()} />
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <Upload size={18} color={TOKEN.textSec} />
-                  <div>
-                    <p style={{ margin: 0, fontSize: 12.5, fontWeight: 700, color: TOKEN.textPri }}>
-                      Gallery Images
-                    </p>
-                    <p style={{ margin: "2px 0 0", fontSize: 11, color: TOKEN.textSec }}>
-                      Drop multiple files or click to upload
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {galleryFiles.length > 0 ? (
-                <div
-                  style={{
-                    border: `1px solid ${TOKEN.border}`,
-                    borderRadius: 10,
-                    padding: "10px 12px",
-                    background: TOKEN.bg,
-                  }}
-                >
-                  <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: TOKEN.textPri }}>
-                    {galleryFiles.length} file{galleryFiles.length !== 1 ? "s" : ""} selected
+        <div className="w-full max-w-400 mx-auto grid grid-cols-1 lg:grid-cols-3 gap-4.5">
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            {sectionCard(
+              "Product Description",
+              <div>
+                <label style={labelStyle}>
+                  Item Description{" "}
+                  <span style={{ color: TOKEN.danger }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  value={itemDescription}
+                  onChange={(e) => setItemDescription(e.target.value)}
+                  style={inputStyle(!!errors.itemDescription)}
+                  placeholder="Enter product description"
+                />
+                {errors.itemDescription ? (
+                  <p
+                    style={{
+                      margin: "5px 0 0",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: TOKEN.danger,
+                    }}
+                  >
+                    {errors.itemDescription}
                   </p>
+                ) : null}
+              </div>,
+            )}
+
+            {sectionCard(
+              "Item Codes",
+              <ItemCodesInput
+                value={itemCodes}
+                onChange={setItemCodes}
+                showValidationError={showItemCodeError}
+              />,
+              "At least one required",
+            )}
+
+            {sectionCard(
+              "Product Images",
+              <>
+                <div
+                  {...mainDropzone.getRootProps()}
+                  style={dropzoneStyle(mainDropzone.isDragActive)}
+                >
+                  <input {...mainDropzone.getInputProps()} />
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}
+                  >
+                    <Upload size={18} color={TOKEN.textSec} />
+                    <div>
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          color: TOKEN.textPri,
+                        }}
+                      >
+                        Main Image
+                      </p>
+                      <p
+                        style={{
+                          margin: "2px 0 0",
+                          fontSize: 11,
+                          color: TOKEN.textSec,
+                        }}
+                      >
+                        {mainImageFile
+                          ? mainImageFile.name
+                          : "Drop or click to upload"}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              ) : null}
-            </>,
-          )}
+
+                <div
+                  {...rawDropzone.getRootProps()}
+                  style={dropzoneStyle(rawDropzone.isDragActive)}
+                >
+                  <input {...rawDropzone.getInputProps()} />
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}
+                  >
+                    <Upload size={18} color={TOKEN.textSec} />
+                    <div>
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          color: TOKEN.textPri,
+                        }}
+                      >
+                        Raw Image
+                      </p>
+                      <p
+                        style={{
+                          margin: "2px 0 0",
+                          fontSize: 11,
+                          color: TOKEN.textSec,
+                        }}
+                      >
+                        {rawImageFile
+                          ? rawImageFile.name
+                          : "Drop or click to upload"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </>,
+            )}
+
+            {sectionCard(
+              "Pricing",
+              <>
+                <div>
+                  <label style={labelStyle}>Regular Price</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={regPrice}
+                    onChange={(e) => setRegPrice(e.target.value)}
+                    style={inputStyle()}
+                    placeholder="Enter regular price"
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Sale Price</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={salePrice}
+                    onChange={(e) => setSalePrice(e.target.value)}
+                    style={inputStyle()}
+                    placeholder="Enter sale price"
+                  />
+                </div>
+              </>,
+            )}
+
+            {sectionCard(
+              "Gallery Images",
+              <>
+                <div
+                  {...galleryDropzone.getRootProps()}
+                  style={dropzoneStyle(galleryDropzone.isDragActive)}
+                >
+                  <input {...galleryDropzone.getInputProps()} />
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 10 }}
+                  >
+                    <Upload size={18} color={TOKEN.textSec} />
+                    <div>
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          color: TOKEN.textPri,
+                        }}
+                      >
+                        Gallery Images
+                      </p>
+                      <p
+                        style={{
+                          margin: "2px 0 0",
+                          fontSize: 11,
+                          color: TOKEN.textSec,
+                        }}
+                      >
+                        Drop multiple files or click to upload
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {galleryFiles.length > 0 ? (
+                  <div
+                    style={{
+                      border: `1px solid ${TOKEN.border}`,
+                      borderRadius: 10,
+                      padding: "10px 12px",
+                      background: TOKEN.bg,
+                    }}
+                  >
+                    <p
+                      style={{
+                        margin: 0,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: TOKEN.textPri,
+                      }}
+                    >
+                      {galleryFiles.length} file
+                      {galleryFiles.length !== 1 ? "s" : ""} selected
+                    </p>
+                  </div>
+                ) : null}
+              </>,
+            )}
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            {sectionCard(
+              "Specifications",
+              <p style={{ margin: 0, fontSize: 11, color: TOKEN.textSec }}>
+                Fill out all spec group fields for this product.
+              </p>,
+              `${specsByGroup.length} group${specsByGroup.length !== 1 ? "s" : ""}`,
+            )}
+
+            {specsByGroup.map((group) => (
+              <div key={group.specGroupId}>
+                {sectionCard(
+                  group.groupName,
+                  <>
+                    {group.items.map((spec) => {
+                      const fieldKey = `${spec.specGroupId}-${spec.label}`;
+                      return (
+                        <div key={spec.id}>
+                          <label htmlFor={fieldKey} style={labelStyle}>
+                            {spec.label}
+                          </label>
+                          <input
+                            id={fieldKey}
+                            value={specValues[fieldKey] ?? ""}
+                            onChange={(e) =>
+                              handleSpecChange(fieldKey, e.target.value)
+                            }
+                            style={inputStyle()}
+                            placeholder={`Enter ${spec.label.toLowerCase()}`}
+                          />
+                        </div>
+                      );
+                    })}
+                  </>,
+                  `${group.items.length} specification${group.items.length !== 1 ? "s" : ""}`,
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            {sectionCard(
+              "Technical Images",
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {TECHNICAL_IMAGE_FIELDS.map((field) => (
+                  <TechnicalImageUploadField
+                    key={field.key}
+                    label={field.label}
+                    file={technicalImageFiles[field.key]}
+                    onChange={(file) =>
+                      handleTechnicalImageChange(field.key, file)
+                    }
+                  />
+                ))}
+              </div>,
+            )}
+          </div>
         </div>
       </div>
 

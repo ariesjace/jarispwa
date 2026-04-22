@@ -15,6 +15,18 @@ export interface ProductFormData {
   mainImageFile?: File;
   rawImageFile?: File;
   images: File[];
+  dimensionalDrawingImageFile?: File;
+  recommendedMountingHeightImageFile?: File;
+  driverCompatibilityImageFile?: File;
+  baseImageFile?: File;
+  illuminanceLevelImageFile?: File;
+  wiringDiagramImageFile?: File;
+  installationImageFile?: File;
+  wiringLayoutImageFile?: File;
+  terminalLayoutImageFile?: File;
+  accessoriesImageFile?: File;
+  regPrice?: string;
+  salePrice?: string;
   brand: string;
 }
 

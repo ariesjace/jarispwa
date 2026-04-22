@@ -14,6 +14,7 @@ import {
   getFilledItemCodes,
   migrateToItemCodes,
 } from "@/types/product";
+import { TOKEN } from "@/components/layout/tokens";
 
 // ─── Single brand badge ────────────────────────────────────────────────────────
 
@@ -105,8 +106,21 @@ export function ItemCodesDisplay({
 
 // ─── Item code input field (for forms) ────────────────────────────────────────
 
-import { Input } from "@/components/ui/input";
 import { ALL_BRANDS } from "@/types/product";
+
+const formSheetLikeInputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: `1px solid ${TOKEN.border}`,
+  background: TOKEN.surface,
+  fontSize: 13.5,
+  color: TOKEN.textPri,
+  outline: "none",
+  boxSizing: "border-box",
+  fontFamily: "inherit",
+  flex: 1,
+};
 
 interface ItemCodesInputProps {
   value: ItemCodes;
@@ -130,30 +144,28 @@ export function ItemCodesInput({
 
   return (
     <div className="space-y-2">
-      {ALL_BRANDS.map((brand) => {
-        const config = ITEM_CODE_BRAND_CONFIG[brand];
-        return (
-          <div key={brand} className="flex items-center gap-2">
-            <div className="w-24 shrink-0 flex items-center gap-1.5">
-              <span
-                className={`w-2 h-2 rounded-full shrink-0 ${config.dotClass}`}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+        {ALL_BRANDS.map((brand) => {
+          const config = ITEM_CODE_BRAND_CONFIG[brand];
+          return (
+            <div key={brand} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span className={`w-2 h-2 rounded-full shrink-0 ${config.dotClass}`} />
+                <span className="text-[10px] font-bold uppercase text-muted-foreground">
+                  {config.label}
+                </span>
+              </div>
+              <input
+                value={value[brand] ?? ""}
+                onChange={(e) => handleChange(brand, e.target.value.toUpperCase())}
+                placeholder={`${brand}-000`}
+                style={formSheetLikeInputStyle}
+                disabled={disabled}
               />
-              <span className="text-[10px] font-bold uppercase text-muted-foreground">
-                {config.label}
-              </span>
             </div>
-            <Input
-              value={value[brand] ?? ""}
-              onChange={(e) =>
-                handleChange(brand, e.target.value.toUpperCase())
-              }
-              placeholder={`${brand}-000`}
-              className="rounded-none h-9 text-xs font-mono uppercase flex-1"
-              disabled={disabled}
-            />
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
       {showValidationError && !hasAtLeastOne && (
         <p className="text-[10px] text-destructive font-bold uppercase">
           At least one item code is required

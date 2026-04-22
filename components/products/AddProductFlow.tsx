@@ -26,13 +26,19 @@ interface AddProductFlowProps {
   onCancel?: () => void;
 }
 
+interface SpecGroupDoc {
+  id: string;
+  name?: string;
+  items?: Array<{ label?: string }>;
+}
+
 export function AddProductFlow({
   onSubmit,
   onCancel,
 }: AddProductFlowProps) {
   const [currentStep, setCurrentStep] = useState<FlowStep>("idle");
-  const [rawFamilyDocs, setRawFamilyDocs] = useState<any[]>([]);
-  const [rawSpecGroupDocs, setRawSpecGroupDocs] = useState<any[]>([]);
+  const [rawFamilyDocs, setRawFamilyDocs] = useState<ProductFamily[]>([]);
+  const [rawSpecGroupDocs, setRawSpecGroupDocs] = useState<SpecGroupDoc[]>([]);
   const [formData, setFormData] = useState<Partial<ProductFormData>>({
     itemCodes: {},
     selectedSpecGroupIds: [],
@@ -44,6 +50,8 @@ export function AddProductFlow({
     productFamilyId: "",
     productFamilyTitle: "",
     itemDescription: "",
+    regPrice: "",
+    salePrice: "",
     brand: "",
   });
 
@@ -66,7 +74,9 @@ export function AddProductFlow({
       rawSpecGroupDocs.map((g) => ({
         id: g.id,
         name: g.name ?? g.id,
-        items: Array.isArray(g.items) ? g.items : [],
+        items: (Array.isArray(g.items) ? g.items : [])
+          .map((item) => ({ label: (item.label ?? "").trim() }))
+          .filter((item) => item.label.length > 0),
       })),
     [rawSpecGroupDocs],
   );
@@ -120,6 +130,18 @@ export function AddProductFlow({
       mainImageFile: formData.mainImageFile,
       rawImageFile: formData.rawImageFile,
       images: formData.images ?? [],
+      dimensionalDrawingImageFile: formData.dimensionalDrawingImageFile,
+      recommendedMountingHeightImageFile: formData.recommendedMountingHeightImageFile,
+      driverCompatibilityImageFile: formData.driverCompatibilityImageFile,
+      baseImageFile: formData.baseImageFile,
+      illuminanceLevelImageFile: formData.illuminanceLevelImageFile,
+      wiringDiagramImageFile: formData.wiringDiagramImageFile,
+      installationImageFile: formData.installationImageFile,
+      wiringLayoutImageFile: formData.wiringLayoutImageFile,
+      terminalLayoutImageFile: formData.terminalLayoutImageFile,
+      accessoriesImageFile: formData.accessoriesImageFile,
+      regPrice: formData.regPrice ?? "",
+      salePrice: formData.salePrice ?? "",
       brand: formData.brand ?? "",
     };
 
@@ -137,6 +159,8 @@ export function AddProductFlow({
         productFamilyId: "",
         productFamilyTitle: "",
         itemDescription: "",
+        regPrice: "",
+        salePrice: "",
         brand: "",
       });
     } catch {
@@ -172,6 +196,8 @@ export function AddProductFlow({
       productFamilyId: "",
       productFamilyTitle: "",
       itemDescription: "",
+      regPrice: "",
+      salePrice: "",
       brand: "",
     });
     setCurrentStep("idle");

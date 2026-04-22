@@ -702,6 +702,38 @@ export default function AllProductsPage() {
         const galleryUrls = await Promise.all(
           (formData.images ?? []).map(uploadToCloud),
         );
+        const dimensionalDrawingImage = formData.dimensionalDrawingImageFile
+          ? await uploadToCloud(formData.dimensionalDrawingImageFile)
+          : "";
+        const recommendedMountingHeightImage = formData.recommendedMountingHeightImageFile
+          ? await uploadToCloud(formData.recommendedMountingHeightImageFile)
+          : "";
+        const driverCompatibilityImage = formData.driverCompatibilityImageFile
+          ? await uploadToCloud(formData.driverCompatibilityImageFile)
+          : "";
+        const baseImage = formData.baseImageFile
+          ? await uploadToCloud(formData.baseImageFile)
+          : "";
+        const illuminanceLevelImage = formData.illuminanceLevelImageFile
+          ? await uploadToCloud(formData.illuminanceLevelImageFile)
+          : "";
+        const wiringDiagramImage = formData.wiringDiagramImageFile
+          ? await uploadToCloud(formData.wiringDiagramImageFile)
+          : "";
+        const installationImage = formData.installationImageFile
+          ? await uploadToCloud(formData.installationImageFile)
+          : "";
+        const wiringLayoutImage = formData.wiringLayoutImageFile
+          ? await uploadToCloud(formData.wiringLayoutImageFile)
+          : "";
+        const terminalLayoutImage = formData.terminalLayoutImageFile
+          ? await uploadToCloud(formData.terminalLayoutImageFile)
+          : "";
+        const accessoriesImage = formData.accessoriesImageFile
+          ? await uploadToCloud(formData.accessoriesImageFile)
+          : "";
+        const regularPrice = Number.parseFloat(formData.regPrice ?? "");
+        const salePrice = Number.parseFloat(formData.salePrice ?? "");
 
         const itemCodesObj = Object.fromEntries(
           Object.entries(formData.itemCodes ?? {}).filter(([, value]) =>
@@ -744,23 +776,23 @@ export default function AllProductsPage() {
           itemCodes: itemCodesObj,
           ecoItemCode: resolvedEco,
           litItemCode: resolvedLit,
-          regularPrice: 0,
-          salePrice: 0,
+          regularPrice: Number.isFinite(regularPrice) ? regularPrice : 0,
+          salePrice: Number.isFinite(salePrice) ? salePrice : 0,
           technicalSpecs,
           mainImage: mainUrl,
           rawImage: rawUrl,
           qrCodeImage: "",
           galleryImages: galleryUrls,
-          dimensionalDrawingImage: "",
-          recommendedMountingHeightImage: "",
-          driverCompatibilityImage: "",
-          baseImage: "",
-          illuminanceLevelImage: "",
-          wiringDiagramImage: "",
-          installationImage: "",
-          wiringLayoutImage: "",
-          terminalLayoutImage: "",
-          accessoriesImage: "",
+          dimensionalDrawingImage,
+          recommendedMountingHeightImage,
+          driverCompatibilityImage,
+          baseImage,
+          illuminanceLevelImage,
+          wiringDiagramImage,
+          installationImage,
+          wiringLayoutImage,
+          terminalLayoutImage,
+          accessoriesImage,
           typeOfPlugImage: "",
           website: [] as string[],
           websites: [] as string[],

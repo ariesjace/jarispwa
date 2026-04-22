@@ -7,6 +7,7 @@ import { TOKEN, SPRING_MED } from "@/components/layout/tokens";
 import type { AvailableSpecItem } from "./types";
 
 interface RawSpecItem {
+  id?: string;
   name?: string;
   label?: string;
 }
@@ -103,6 +104,7 @@ export function ProductFamilyModal({
     selectedGroupIds?: Set<string>,
   ): AvailableSpecItem[] => {
     const specs: AvailableSpecItem[] = [];
+    const seenSpecIds = new Map<string, number>();
     const familySpecs = Array.isArray(family.specs) ? family.specs : [];
 
     for (const groupRef of familySpecs) {
@@ -116,11 +118,14 @@ export function ProductFamilyModal({
       for (const item of specItems) {
         const label = (item.name ?? item.label ?? "").toUpperCase().trim();
         if (!label) continue;
+        const baseId = `${groupRef.specGroupId}:${label}`;
+        const seenCount = seenSpecIds.get(baseId) ?? 0;
+        seenSpecIds.set(baseId, seenCount + 1);
         specs.push({
           specGroupId: groupRef.specGroupId,
           specGroup: groupName,
           label,
-          id: `${groupRef.specGroupId}:${label}`,
+          id: seenCount === 0 ? baseId : `${baseId}#${seenCount}`,
         });
       }
     }
@@ -473,9 +478,9 @@ export function ProductFamilyModal({
                               >
                                 {(family.specs ?? [])
                                   .slice(0, 4)
-                                  .map((g) => (
+                                  .map((g, idx) => (
                                     <span
-                                      key={g.specGroupId}
+                                      key={`${g.specGroupId}-${idx}`}
                                       style={{
                                         fontSize: 9,
                                         fontWeight: 700,
@@ -573,13 +578,13 @@ export function ProductFamilyModal({
                     <label style={labelStyle}>Specification groups</label>
 
                     {(Array.isArray(selectedFamily?.specs) ? selectedFamily?.specs : []).map(
-                      (group) => {
+                      (group, groupIdx) => {
                       const groupId = group.specGroupId;
                       const isSelected = selectedSpecGroups.has(groupId);
                       const items = Array.isArray(group.specItems) ? group.specItems : [];
                       return (
                         <div
-                          key={groupId}
+                          key={`${groupId}-${groupIdx}`}
                           onClick={() => toggleSpecGroup(groupId)}
                           style={{
                             border: `1px solid ${isSelected ? TOKEN.primary : TOKEN.border}`,
@@ -647,7 +652,7 @@ export function ProductFamilyModal({
                                     marginTop: 8,
                                   }}
                                 >
-                                  {items.map((item) => {
+                                  {items.map((item, itemIdx) => {
                                     const label = (
                                       item.name ??
                                       item.label ??
@@ -658,7 +663,7 @@ export function ProductFamilyModal({
                                     if (!label) return null;
                                     return (
                                     <span
-                                      key={`${groupId}-${label}`}
+                                      key={`${groupId}-${item.id ?? label}-${itemIdx}`}
                                       style={{
                                         fontSize: 9,
                                         fontWeight: 700,
