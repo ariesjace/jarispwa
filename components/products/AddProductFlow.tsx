@@ -246,6 +246,8 @@ export function AddProductFlow({
       {currentStep === "form" && (
         <ProductFormSheet
           isOpen={true}
+          mode="create"
+          selectedProduct={null}
           onClose={handleReset}
           onSubmit={handleFormSubmit}
           onBack={handleBack}

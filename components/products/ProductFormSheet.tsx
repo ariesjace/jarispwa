@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { ArrowLeft, Upload, X } from "lucide-react";
 import { TOKEN } from "@/components/layout/tokens";
@@ -18,6 +18,8 @@ interface ProductFormSheetProps {
   onSubmit: (data: Partial<ProductFormData>) => void;
   onBack: () => void;
   formData: Partial<ProductFormData>;
+  mode?: "create" | "edit";
+  selectedProduct?: Record<string, any> | null;
   allSpecGroups: Array<{
     id: string;
     name: string;
@@ -233,45 +235,65 @@ export function ProductFormSheet({
   onSubmit,
   onBack,
   formData,
+  mode = "create",
+  selectedProduct = null,
   allSpecGroups,
 }: ProductFormSheetProps) {
-  const [itemDescription, setItemDescription] = useState(
-    formData.itemDescription ?? "",
-  );
-  const [itemCodes, setItemCodes] = useState<ItemCodes>(
-    formData.itemCodes ?? {},
-  );
-  const [specValues, setSpecValues] = useState<Record<string, string>>(
-    formData.specValues ?? {},
-  );
-  const [mainImageFile, setMainImageFile] = useState<File | null>(
-    formData.mainImageFile ?? null,
-  );
-  const [rawImageFile, setRawImageFile] = useState<File | null>(
-    formData.rawImageFile ?? null,
-  );
-  const [galleryFiles, setGalleryFiles] = useState<File[]>(
-    formData.images ?? [],
-  );
+  const hydrateFromFormData = useCallback((source: Partial<ProductFormData>) => {
+    setItemDescription(source.itemDescription ?? "");
+    setItemCodes(source.itemCodes ?? {});
+    setSpecValues(source.specValues ?? {});
+    setMainImageFile(source.mainImageFile ?? null);
+    setRawImageFile(source.rawImageFile ?? null);
+    setGalleryFiles(source.images ?? []);
+    setTechnicalImageFiles({
+      dimensionalDrawingImageFile: source.dimensionalDrawingImageFile ?? null,
+      recommendedMountingHeightImageFile:
+        source.recommendedMountingHeightImageFile ?? null,
+      driverCompatibilityImageFile: source.driverCompatibilityImageFile ?? null,
+      baseImageFile: source.baseImageFile ?? null,
+      illuminanceLevelImageFile: source.illuminanceLevelImageFile ?? null,
+      wiringDiagramImageFile: source.wiringDiagramImageFile ?? null,
+      installationImageFile: source.installationImageFile ?? null,
+      wiringLayoutImageFile: source.wiringLayoutImageFile ?? null,
+      terminalLayoutImageFile: source.terminalLayoutImageFile ?? null,
+      accessoriesImageFile: source.accessoriesImageFile ?? null,
+    });
+    setRegPrice(source.regPrice ?? "");
+    setSalePrice(source.salePrice ?? "");
+    setShowItemCodeError(false);
+    setErrors({});
+  }, []);
+
+  const [itemDescription, setItemDescription] = useState("");
+  const [itemCodes, setItemCodes] = useState<ItemCodes>({});
+  const [specValues, setSpecValues] = useState<Record<string, string>>({});
+  const [mainImageFile, setMainImageFile] = useState<File | null>(null);
+  const [rawImageFile, setRawImageFile] = useState<File | null>(null);
+  const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
   const [technicalImageFiles, setTechnicalImageFiles] = useState<
     Record<TechnicalImageFieldKey, File | null>
   >({
-    dimensionalDrawingImageFile: formData.dimensionalDrawingImageFile ?? null,
-    recommendedMountingHeightImageFile:
-      formData.recommendedMountingHeightImageFile ?? null,
-    driverCompatibilityImageFile: formData.driverCompatibilityImageFile ?? null,
-    baseImageFile: formData.baseImageFile ?? null,
-    illuminanceLevelImageFile: formData.illuminanceLevelImageFile ?? null,
-    wiringDiagramImageFile: formData.wiringDiagramImageFile ?? null,
-    installationImageFile: formData.installationImageFile ?? null,
-    wiringLayoutImageFile: formData.wiringLayoutImageFile ?? null,
-    terminalLayoutImageFile: formData.terminalLayoutImageFile ?? null,
-    accessoriesImageFile: formData.accessoriesImageFile ?? null,
+    dimensionalDrawingImageFile: null,
+    recommendedMountingHeightImageFile: null,
+    driverCompatibilityImageFile: null,
+    baseImageFile: null,
+    illuminanceLevelImageFile: null,
+    wiringDiagramImageFile: null,
+    installationImageFile: null,
+    wiringLayoutImageFile: null,
+    terminalLayoutImageFile: null,
+    accessoriesImageFile: null,
   });
-  const [regPrice, setRegPrice] = useState(formData.regPrice ?? "");
-  const [salePrice, setSalePrice] = useState(formData.salePrice ?? "");
+  const [regPrice, setRegPrice] = useState("");
+  const [salePrice, setSalePrice] = useState("");
   const [showItemCodeError, setShowItemCodeError] = useState(false);
   const [errors, setErrors] = useState<ValidationErrors>({});
+
+  useEffect(() => {
+    if (!isOpen) return;
+    hydrateFromFormData(formData);
+  }, [formData, hydrateFromFormData, isOpen, mode, selectedProduct]);
 
   const specsByGroup = useMemo(
     () => groupSpecs(formData.availableSpecs ?? [], allSpecGroups),
@@ -431,7 +453,7 @@ export function ProductFormSheet({
                   color: TOKEN.textPri,
                 }}
               >
-                New Product
+                {mode === "edit" ? "Edit Product" : "New Product"}
               </p>
               <p
                 style={{
@@ -746,7 +768,7 @@ export function ProductFormSheet({
               Cancel
             </button>
             <button style={primaryBtn} onClick={handleSubmit}>
-              Preview TDS
+              {mode === "edit" ? "Update Product" : "Preview TDS"}
             </button>
           </div>
         </div>

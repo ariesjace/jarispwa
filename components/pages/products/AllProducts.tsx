@@ -62,10 +62,15 @@ import { useProductWorkflow } from "@/lib/useProductWorkflow";
 import { toast } from "sonner";
 import BulkUploader from "@/components/products/BulkUploader";
 import { AddProductFlow } from "@/components/products/AddProductFlow";
+import { ProductFormSheet } from "@/components/products/ProductFormSheet";
 import type {
   ProductFamily as AddFlowFamily,
   ProductFormData as AddFlowFormData,
 } from "@/components/products/AddProductFlow";
+import type {
+  AvailableSpecItem,
+  ProductFormData as ProductSheetData,
+} from "@/components/products/types";
 import { slugify } from "@/components/products/utils";
 import { logAuditEvent } from "@/lib/logger";
 import { getPrimaryItemCode, type ItemCodes } from "@/types/product";
@@ -224,6 +229,9 @@ const pageBtnStyle: React.CSSProperties = {
 };
 
 const SWIPE_DELETE_THRESHOLD = 90;
+const SWIPE_ACTION_THRESHOLD = 72;
+const SWIPE_DELETE_MAX = -150;
+const SWIPE_ACTION_MAX = 140;
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -233,7 +241,8 @@ export default function AllProductsPage() {
   const [isMobile, setIsMobile] = useState(false);
 
   // ── RBAC ────────────────────────────────────────────────────────────────────
-  const { submitProductDelete, canVerifyProducts } = useProductWorkflow();
+  const { submitProductDelete, submitProductUpdate, canVerifyProducts } =
+    useProductWorkflow();
 
   // ── Table state ─────────────────────────────────────────────────────────────
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -262,6 +271,11 @@ export default function AllProductsPage() {
   // ── Add Product Flow raw data ─────────────────────────────────────────────
   const [rawFamilyDocs, setRawFamilyDocs] = useState<any[]>([]);
   const [rawSpecGroupDocs, setRawSpecGroupDocs] = useState<any[]>([]);
+  const [productSheetOpen, setProductSheetOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+  const [productSheetMode, setProductSheetMode] = useState<"create" | "edit">(
+    "create",
+  );
 
   // ── Delete / bulk state ─────────────────────────────────────────────────────
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
@@ -273,7 +287,7 @@ export default function AllProductsPage() {
     "family" | "class" | "usage" | null
   >(null);
 
-  // ── Swipe-to-delete ─────────────────────────────────────────────────────────
+  // ── Swipe-to-actions (mobile) ──────────────────────────────────────────────
   const [swipingCardId, setSwipingCardId] = useState<string | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const swipeOffsetRef = useRef(0);
@@ -390,6 +404,352 @@ export default function AllProductsPage() {
           .filter((g: any) => g.items.length > 0),
       })),
     [rawFamilyDocs, rawSpecGroupDocs],
+  );
+
+  const allSpecGroups = useMemo(
+    () =>
+      rawSpecGroupDocs.map((g) => ({
+        id: g.id,
+        name: g.name ?? g.id,
+        items: (Array.isArray(g.items) ? g.items : [])
+          .map((item: any) => ({ label: (item.label ?? "").trim() }))
+          .filter((item: { label: string }) => item.label.length > 0),
+      })),
+    [rawSpecGroupDocs],
+  );
+
+  const getAvailableSpecsForProduct = useCallback(
+    (product: any): AvailableSpecItem[] => {
+      const normalize = (v: unknown) => String(v ?? "").toUpperCase().trim();
+      const familyNeedle =
+        normalize(product?.productFamilyId) ||
+        normalize(product?.productFamily) ||
+        normalize(product?.categories);
+      if (!familyNeedle) return [];
+
+      const family = rawFamilyDocs.find((f) => {
+        const haystack = [f.id, f.title, f.name].map(normalize);
+        return haystack.includes(familyNeedle);
+      });
+      if (!family) return [];
+
+      return (family.specs ?? []).flatMap((specRef: any) => {
+        const specGroupId = String(specRef?.specGroupId ?? "").trim();
+        if (!specGroupId) return [];
+        const group = rawSpecGroupDocs.find((g) => g.id === specGroupId);
+        const groupName = group?.name ?? specGroupId;
+        return (specRef.specItems ?? [])
+          .map((item: any, index: number) => {
+            const label = String(item?.name ?? item?.label ?? "").trim();
+            if (!label) return null;
+            return {
+              specGroupId,
+              specGroup: groupName,
+              label,
+              id:
+                String(item?.id ?? "").trim() ||
+                `${specGroupId}-${label}-${index}`,
+            };
+          })
+          .filter(Boolean) as AvailableSpecItem[];
+      });
+    },
+    [rawFamilyDocs, rawSpecGroupDocs],
+  );
+
+  const buildSpecValues = useCallback(
+    (product: any, availableSpecs: AvailableSpecItem[]) => {
+      const specValueMap = new Map<string, string>();
+      const techSpecs = Array.isArray(product?.technicalSpecs)
+        ? product.technicalSpecs
+        : [];
+
+      techSpecs.forEach((group: any) => {
+        const groupName = String(group?.specGroup ?? "").toUpperCase().trim();
+        (Array.isArray(group?.specs) ? group.specs : []).forEach((spec: any) => {
+          const specName = String(spec?.name ?? "").toUpperCase().trim();
+          const specValue = String(spec?.value ?? "").trim();
+          if (!groupName || !specName || !specValue) return;
+          specValueMap.set(`${groupName}::${specName}`, specValue);
+        });
+      });
+
+      return availableSpecs.reduce<Record<string, string>>((acc, spec) => {
+        const lookupKey = `${String(spec.specGroup).toUpperCase().trim()}::${String(spec.label).toUpperCase().trim()}`;
+        const value = specValueMap.get(lookupKey);
+        if (value) acc[`${spec.specGroupId}-${spec.label}`] = value;
+        return acc;
+      }, {});
+    },
+    [],
+  );
+
+  const selectedProductFormData = useMemo<Partial<ProductSheetData>>(() => {
+    if (!selectedProduct) {
+      return {
+        itemCodes: {},
+        selectedSpecGroupIds: [],
+        availableSpecs: [],
+        specValues: {},
+        images: [],
+        productUsage: [],
+        productClass: "",
+        productFamilyId: "",
+        productFamilyTitle: "",
+        itemDescription: "",
+        regPrice: "",
+        salePrice: "",
+        brand: "",
+      };
+    }
+
+    const availableSpecs = getAvailableSpecsForProduct(selectedProduct);
+    const productClass = String(selectedProduct.productClass ?? "")
+      .toLowerCase()
+      .trim();
+    const normalizedClass =
+      productClass === "spf" || productClass === "standard" ? productClass : "";
+
+    return {
+      productFamilyId: selectedProduct.productFamilyId ?? "",
+      productFamilyTitle:
+        selectedProduct.productFamily ??
+        selectedProduct.categories ??
+        selectedProduct.productFamilyTitle ??
+        "",
+      productUsage: Array.isArray(selectedProduct.productUsage)
+        ? selectedProduct.productUsage
+        : selectedProduct.productUsage
+          ? [selectedProduct.productUsage]
+          : [],
+      selectedSpecGroupIds: Array.from(
+        new Set(availableSpecs.map((spec) => spec.specGroupId)),
+      ),
+      availableSpecs,
+      productClass: normalizedClass as "spf" | "standard" | "",
+      itemDescription:
+        selectedProduct.itemDescription ?? selectedProduct.name ?? "",
+      itemCodes: resolveItemCodes(selectedProduct),
+      specValues: buildSpecValues(selectedProduct, availableSpecs),
+      images: [],
+      regPrice: String(
+        selectedProduct.regularPrice ?? selectedProduct.regPrice ?? "",
+      ),
+      salePrice: String(selectedProduct.salePrice ?? ""),
+      brand: selectedProduct.brand ?? "",
+    };
+  }, [buildSpecValues, getAvailableSpecsForProduct, selectedProduct]);
+
+  const closeProductSheet = useCallback(() => {
+    setProductSheetOpen(false);
+    setProductSheetMode("create");
+    setSelectedProduct(null);
+  }, []);
+
+  const handleEditProduct = useCallback((product: any) => {
+    setSwipingCardId(null);
+    setSwipeOffset(0);
+    swipeOffsetRef.current = 0;
+    swipeCardIdRef.current = null;
+    swipeDirectionRef.current = null;
+    setSelectedProduct(product);
+    setProductSheetMode("edit");
+    setProductSheetOpen(true);
+  }, []);
+
+  const handleEditProductSubmit = useCallback(
+    async (formData: Partial<ProductSheetData>) => {
+      if (!selectedProduct?.id) return;
+      const beforeSnapshot =
+        data.find((product) => product.id === selectedProduct.id) ??
+        selectedProduct;
+      const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "";
+      const UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET ?? "";
+
+      const uploadToCloud = async (file: File): Promise<string> => {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("upload_preset", UPLOAD_PRESET);
+        const res = await fetch(
+          `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
+          { method: "POST", body: fd },
+        );
+        const json = await res.json();
+        if (!json?.secure_url) throw new Error("Cloudinary upload failed");
+        return json.secure_url as string;
+      };
+
+      try {
+        const itemCodesObj = Object.fromEntries(
+          Object.entries(
+            formData.itemCodes ?? resolveItemCodes(beforeSnapshot),
+          ).filter(([, value]) => Boolean(String(value ?? "").trim())),
+        ) as ItemCodes;
+        const resolvedEco = itemCodesObj.ECOSHIFT ?? "";
+        const resolvedLit = itemCodesObj.LIT ?? "";
+        const resolvedBrand = resolvedLit ? "LIT" : resolvedEco ? "ECOSHIFT" : "";
+
+        const specsGrouped: Record<string, { name: string; value: string }[]> =
+          {};
+        Object.entries(formData.specValues ?? {}).forEach(([key, rawValue]) => {
+          const value = String(rawValue ?? "").trim();
+          if (!value) return;
+          const spec = (selectedProductFormData.availableSpecs ?? []).find(
+            (s) => `${s.specGroupId}-${s.label}` === key,
+          );
+          if (!spec) return;
+          if (!specsGrouped[spec.specGroup]) specsGrouped[spec.specGroup] = [];
+          specsGrouped[spec.specGroup].push({
+            name: spec.label.toUpperCase().trim(),
+            value: value.toUpperCase().trim(),
+          });
+        });
+
+        const nextTechnicalSpecs = Object.entries(specsGrouped)
+          .map(([specGroup, specs]) => ({
+            specGroup: specGroup.toUpperCase().trim(),
+            specs,
+          }))
+          .filter((group) => group.specs.length > 0);
+        const technicalSpecs =
+          nextTechnicalSpecs.length > 0
+            ? nextTechnicalSpecs
+            : beforeSnapshot.technicalSpecs ?? [];
+
+        const regularPrice = Number.parseFloat(
+          formData.regPrice ?? String(beforeSnapshot.regularPrice ?? ""),
+        );
+        const salePrice = Number.parseFloat(
+          formData.salePrice ?? String(beforeSnapshot.salePrice ?? ""),
+        );
+
+        const nextDescription = String(
+          formData.itemDescription ??
+            beforeSnapshot.itemDescription ??
+            beforeSnapshot.name ??
+            "",
+        ).trim();
+
+        const mainImage = formData.mainImageFile
+          ? await uploadToCloud(formData.mainImageFile)
+          : beforeSnapshot.mainImage ?? beforeSnapshot.imageUrl ?? "";
+        const rawImage = formData.rawImageFile
+          ? await uploadToCloud(formData.rawImageFile)
+          : beforeSnapshot.rawImage ?? mainImage;
+        const galleryImages =
+          formData.images && formData.images.length > 0
+            ? await Promise.all(formData.images.map(uploadToCloud))
+            : Array.isArray(beforeSnapshot.galleryImages)
+              ? beforeSnapshot.galleryImages
+              : Array.isArray(beforeSnapshot.images)
+                ? beforeSnapshot.images
+                : [];
+
+        const dimensionalDrawingImage = formData.dimensionalDrawingImageFile
+          ? await uploadToCloud(formData.dimensionalDrawingImageFile)
+          : beforeSnapshot.dimensionalDrawingImage ?? "";
+        const recommendedMountingHeightImage =
+          formData.recommendedMountingHeightImageFile
+            ? await uploadToCloud(formData.recommendedMountingHeightImageFile)
+            : beforeSnapshot.recommendedMountingHeightImage ?? "";
+        const driverCompatibilityImage = formData.driverCompatibilityImageFile
+          ? await uploadToCloud(formData.driverCompatibilityImageFile)
+          : beforeSnapshot.driverCompatibilityImage ?? "";
+        const baseImage = formData.baseImageFile
+          ? await uploadToCloud(formData.baseImageFile)
+          : beforeSnapshot.baseImage ?? "";
+        const illuminanceLevelImage = formData.illuminanceLevelImageFile
+          ? await uploadToCloud(formData.illuminanceLevelImageFile)
+          : beforeSnapshot.illuminanceLevelImage ?? "";
+        const wiringDiagramImage = formData.wiringDiagramImageFile
+          ? await uploadToCloud(formData.wiringDiagramImageFile)
+          : beforeSnapshot.wiringDiagramImage ?? "";
+        const installationImage = formData.installationImageFile
+          ? await uploadToCloud(formData.installationImageFile)
+          : beforeSnapshot.installationImage ?? "";
+        const wiringLayoutImage = formData.wiringLayoutImageFile
+          ? await uploadToCloud(formData.wiringLayoutImageFile)
+          : beforeSnapshot.wiringLayoutImage ?? "";
+        const terminalLayoutImage = formData.terminalLayoutImageFile
+          ? await uploadToCloud(formData.terminalLayoutImageFile)
+          : beforeSnapshot.terminalLayoutImage ?? "";
+        const accessoriesImage = formData.accessoriesImageFile
+          ? await uploadToCloud(formData.accessoriesImageFile)
+          : beforeSnapshot.accessoriesImage ?? "";
+
+        const after = {
+          ...beforeSnapshot,
+          name: nextDescription,
+          itemDescription: nextDescription,
+          slug: slugify(nextDescription),
+          itemCodes: itemCodesObj,
+          ecoItemCode: resolvedEco,
+          litItemCode: resolvedLit,
+          brand: resolvedBrand || beforeSnapshot.brand || "",
+          technicalSpecs,
+          regularPrice: Number.isFinite(regularPrice)
+            ? regularPrice
+            : beforeSnapshot.regularPrice ?? 0,
+          salePrice: Number.isFinite(salePrice)
+            ? salePrice
+            : beforeSnapshot.salePrice ?? 0,
+          productClass: formData.productClass ?? beforeSnapshot.productClass ?? "",
+          productFamily:
+            formData.productFamilyTitle ??
+            beforeSnapshot.productFamily ??
+            beforeSnapshot.categories ??
+            "",
+          productUsage:
+            formData.productUsage ??
+            (Array.isArray(beforeSnapshot.productUsage)
+              ? beforeSnapshot.productUsage
+              : beforeSnapshot.productUsage
+                ? [beforeSnapshot.productUsage]
+                : []),
+          mainImage,
+          rawImage,
+          galleryImages,
+          dimensionalDrawingImage,
+          recommendedMountingHeightImage,
+          driverCompatibilityImage,
+          baseImage,
+          illuminanceLevelImage,
+          wiringDiagramImage,
+          installationImage,
+          wiringLayoutImage,
+          terminalLayoutImage,
+          accessoriesImage,
+          seo: {
+            ...(beforeSnapshot.seo ?? {}),
+            itemDescription: nextDescription,
+            ogImage: mainImage || beforeSnapshot?.seo?.ogImage || "",
+            lastUpdated: new Date().toISOString(),
+          },
+        };
+
+        const result = await submitProductUpdate({
+          productId: selectedProduct.id,
+          before: beforeSnapshot,
+          after,
+          productName: nextDescription || beforeSnapshot.name,
+          source: "all-products:edit",
+          page: "/products/all-products",
+        });
+        toast.success(result.message);
+        closeProductSheet();
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to update product";
+        toast.error(message);
+      }
+    },
+    [
+      closeProductSheet,
+      data,
+      selectedProduct,
+      selectedProductFormData.availableSpecs,
+      submitProductUpdate,
+    ],
   );
 
   // ── Columns ─────────────────────────────────────────────────────────────────
@@ -539,7 +899,14 @@ export default function AllProductsPage() {
               paddingRight: 8,
             }}
           >
-            <button style={iconBtnStyle} title="Edit">
+            <button
+              style={iconBtnStyle}
+              title="Edit"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEditProduct(row.original);
+              }}
+            >
               <Edit2 size={15} />
             </button>
             {row.original.tdsFileUrl && (
@@ -594,7 +961,7 @@ export default function AllProductsPage() {
         cell: () => null,
       },
     ],
-    [],
+    [handleEditProduct],
   );
 
   // ── Table instance ──────────────────────────────────────────────────────────
@@ -906,6 +1273,14 @@ export default function AllProductsPage() {
         longPressActiveRef.current = false;
         return;
       }
+      if (swipingCardId === id && swipeOffsetRef.current !== 0) {
+        setSwipingCardId(null);
+        setSwipeOffset(0);
+        swipeOffsetRef.current = 0;
+        swipeCardIdRef.current = null;
+        swipeDirectionRef.current = null;
+        return;
+      }
       if (isBulk) {
         const row = table.getFilteredRowModel().rows.find((r) => r.id === id);
         if (row) {
@@ -914,10 +1289,10 @@ export default function AllProductsPage() {
         }
       }
     },
-    [isBulk, table],
+    [isBulk, swipingCardId, table],
   );
 
-  // ── Swipe-to-delete handlers (mobile) ──────────────────────────────────────
+  // ── Swipe-to-actions handlers (mobile) ─────────────────────────────────────
   const handleSwipeTouchStart = useCallback(
     (e: React.TouchEvent, rowId: string) => {
       if (isBulk) return;
@@ -946,11 +1321,12 @@ export default function AllProductsPage() {
       }
       if (swipeDirectionRef.current !== "h") return;
       handleCardPressEnd();
-      if (dx < 0) {
-        const clamped = Math.max(dx, -150);
-        swipeOffsetRef.current = clamped;
-        setSwipeOffset(clamped);
-      }
+      const clamped =
+        dx < 0
+          ? Math.max(dx, SWIPE_DELETE_MAX)
+          : Math.min(dx, SWIPE_ACTION_MAX);
+      swipeOffsetRef.current = clamped;
+      setSwipeOffset(clamped);
     },
     [handleCardPressEnd],
   );
@@ -958,11 +1334,14 @@ export default function AllProductsPage() {
   const handleSwipeTouchEnd = useCallback(
     (product: any) => {
       handleCardPressEnd();
-      if (
-        swipeDirectionRef.current === "h" &&
-        swipeOffsetRef.current <= -SWIPE_DELETE_THRESHOLD
-      ) {
-        setDeleteTarget(product);
+      if (swipeDirectionRef.current === "h") {
+        if (swipeOffsetRef.current <= -SWIPE_DELETE_THRESHOLD) {
+          setDeleteTarget(product);
+        }
+        if (swipeOffsetRef.current >= SWIPE_ACTION_THRESHOLD) {
+          handleEditProduct(product);
+          return;
+        }
       }
       setSwipingCardId(null);
       setSwipeOffset(0);
@@ -970,7 +1349,7 @@ export default function AllProductsPage() {
       swipeCardIdRef.current = null;
       swipeDirectionRef.current = null;
     },
-    [handleCardPressEnd],
+    [handleCardPressEnd, handleEditProduct],
   );
 
   const closeFilterDrawer = useCallback(() => {
@@ -1589,7 +1968,10 @@ export default function AllProductsPage() {
           const codes = getFilledItemCodes(resolveItemCodes(product));
           const isThisSwiping = swipingCardId === row.id;
           const currentOffset = isThisSwiping ? swipeOffset : 0;
+          const actionZoneWidth = Math.max(currentOffset, 0);
           const deleteZoneWidth = Math.max(-currentOffset, 0);
+          const showActionIcon = actionZoneWidth > 40;
+          const pastActionThreshold = actionZoneWidth >= SWIPE_ACTION_THRESHOLD;
           const showDeleteIcon = deleteZoneWidth > 40;
           const pastThreshold = deleteZoneWidth >= SWIPE_DELETE_THRESHOLD;
 
@@ -1603,6 +1985,54 @@ export default function AllProductsPage() {
                 flexShrink: 0,
               }}
             >
+              {/* Action zone */}
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: actionZoneWidth,
+                  background: pastActionThreshold ? "#166534" : TOKEN.primary,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  transition: isThisSwiping
+                    ? "none"
+                    : "width 0.3s ease, background 0.15s",
+                  borderRadius: "16px 0 0 16px",
+                }}
+              >
+                {showActionIcon && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    <Edit2
+                      size={22}
+                      color="#fff"
+                      style={{ opacity: pastActionThreshold ? 1 : 0.85 }}
+                    />
+                    {pastActionThreshold && (
+                      <span
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 800,
+                          color: "#fff",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        Release
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Delete zone */}
               <div
                 style={{
@@ -1661,10 +2091,12 @@ export default function AllProductsPage() {
                   background: isSelected ? `${TOKEN.primary}08` : TOKEN.surface,
                   position: "relative",
                   WebkitUserSelect: "none",
-                  transform: `translateX(${Math.max(currentOffset, -150)}px)`,
+                  transform: `translateX(${Math.max(Math.min(currentOffset, SWIPE_ACTION_MAX), SWIPE_DELETE_MAX)}px)`,
                   transition: isThisSwiping
                     ? "none"
                     : "transform 0.3s cubic-bezier(0.4,0,0.2,1)",
+                  borderTopLeftRadius: actionZoneWidth > 8 ? 0 : 16,
+                  borderBottomLeftRadius: actionZoneWidth > 8 ? 0 : 16,
                   borderTopRightRadius: deleteZoneWidth > 8 ? 0 : 16,
                   borderBottomRightRadius: deleteZoneWidth > 8 ? 0 : 16,
                 }}
@@ -2199,6 +2631,17 @@ export default function AllProductsPage() {
           onCancel={() => {}}
         />
       </div>
+
+      <ProductFormSheet
+        isOpen={productSheetOpen}
+        mode={productSheetMode}
+        selectedProduct={selectedProduct}
+        onClose={closeProductSheet}
+        onBack={closeProductSheet}
+        onSubmit={handleEditProductSubmit}
+        formData={selectedProductFormData}
+        allSpecGroups={allSpecGroups}
+      />
 
       {/* ── Delete dialogs ── */}
       <DeleteToRecycleBinDialog
