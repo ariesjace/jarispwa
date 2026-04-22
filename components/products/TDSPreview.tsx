@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Download, Loader2 } from "lucide-react";
 import { TOKEN } from "@/components/layout/tokens";
+import { generateTdsPdf, normaliseBrand } from "@/lib/tdsGenerator";
+import { getPrimaryItemCode } from "@/types/product";
 import type { ProductFormData } from "./types";
 
 interface TDSPreviewProps {
@@ -47,21 +49,134 @@ export function TDSPreview({
   onBack,
   formData,
 }: TDSPreviewProps) {
-  const [tdsHtml, setTdsHtml] = useState("");
+  const [previewPdfUrl, setPreviewPdfUrl] = useState("");
   const [isGenerating, setIsGenerating] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const previewUrlRef = useRef<string | null>(null);
+
+  const primaryCode = useMemo(() => {
+    const fromItemCodes = getPrimaryItemCode(formData.itemCodes ?? {})?.code;
+    if (fromItemCodes) return fromItemCodes;
+    const fallback = Object.values(formData.itemCodes ?? {}).find((v) =>
+      String(v ?? "").trim(),
+    );
+    return String(fallback ?? "preview");
+  }, [formData.itemCodes]);
 
   useEffect(() => {
-    if (isOpen) {
+    return () => {
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsGenerating(false);
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+      setPreviewPdfUrl("");
+      return;
+    }
+
+    let cancelled = false;
+    const tempUrls: string[] = [];
+
+    const toObjectUrl = (file?: File) => {
+      if (!file) return "";
+      const url = URL.createObjectURL(file);
+      tempUrls.push(url);
+      return url;
+    };
+
+    const technicalSpecsMap = new Map<
+      string,
+      { specGroup: string; specs: Array<{ name: string; value: string }> }
+    >();
+
+    (formData.availableSpecs ?? []).forEach((spec) => {
+      const key = `${spec.specGroupId}-${spec.label}`;
+      const value = String(formData.specValues?.[key] ?? "").trim();
+      if (!value) return;
+      if (!technicalSpecsMap.has(spec.specGroupId)) {
+        technicalSpecsMap.set(spec.specGroupId, {
+          specGroup: spec.specGroup,
+          specs: [],
+        });
+      }
+      technicalSpecsMap.get(spec.specGroupId)?.specs.push({
+        name: spec.label,
+        value,
+      });
+    });
+
+    const technicalSpecs = Array.from(technicalSpecsMap.values()).filter(
+      (group) => group.specs.length > 0,
+    );
+
+    const generatePreview = async () => {
       setIsGenerating(true);
       try {
-        setTdsHtml(generateBlankTDS(formData));
+        const selectedBrand =
+          String(formData.brand ?? "").trim() ||
+          Object.entries(formData.itemCodes ?? {}).find(([, code]) =>
+            String(code ?? "").trim(),
+          )?.[0] ||
+          "LIT";
+
+        const pdfBlob = await generateTdsPdf({
+          itemDescription: formData.itemDescription ?? "",
+          itemCodes: formData.itemCodes ?? {},
+          technicalSpecs,
+          brand: normaliseBrand(selectedBrand),
+          includeBrandAssets: false,
+          mainImageUrl: toObjectUrl(formData.mainImageFile),
+          rawImageUrl: toObjectUrl(formData.rawImageFile),
+          dimensionalDrawingUrl: toObjectUrl(formData.dimensionalDrawingImageFile),
+          recommendedMountingHeightUrl: toObjectUrl(
+            formData.recommendedMountingHeightImageFile,
+          ),
+          driverCompatibilityUrl: toObjectUrl(
+            formData.driverCompatibilityImageFile,
+          ),
+          baseImageUrl: toObjectUrl(formData.baseImageFile),
+          illuminanceLevelUrl: toObjectUrl(formData.illuminanceLevelImageFile),
+          wiringDiagramUrl: toObjectUrl(formData.wiringDiagramImageFile),
+          installationUrl: toObjectUrl(formData.installationImageFile),
+          wiringLayoutUrl: toObjectUrl(formData.wiringLayoutImageFile),
+          terminalLayoutUrl: toObjectUrl(formData.terminalLayoutImageFile),
+          accessoriesImageUrl: toObjectUrl(formData.accessoriesImageFile),
+        });
+
+        if (cancelled) return;
+        const nextPreviewUrl = URL.createObjectURL(pdfBlob);
+        if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = nextPreviewUrl;
+        setPreviewPdfUrl(nextPreviewUrl);
       } catch (err) {
-        console.error("Error generating TDS:", err);
+        console.error("Error generating TDS preview PDF:", err);
+        if (!cancelled) {
+          if (previewUrlRef.current) {
+            URL.revokeObjectURL(previewUrlRef.current);
+            previewUrlRef.current = null;
+          }
+          setPreviewPdfUrl("");
+        }
       } finally {
-        setIsGenerating(false);
+        tempUrls.forEach((url) => URL.revokeObjectURL(url));
+        if (!cancelled) setIsGenerating(false);
       }
-    }
+    };
+
+    void generatePreview();
+    return () => {
+      cancelled = true;
+      tempUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
   }, [isOpen, formData]);
 
   const handleConfirm = async () => {
@@ -76,13 +191,11 @@ export function TDSPreview({
   };
 
   const handleDownload = () => {
-    const blob = new Blob([tdsHtml], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
+    if (!previewPdfUrl) return;
     const a = document.createElement("a");
-    a.href = url;
-    a.download = `TDS-${Object.values(formData.itemCodes || {})[0] || "preview"}.html`;
+    a.href = previewPdfUrl;
+    a.download = `${primaryCode}_TDS_Preview.pdf`;
     a.click();
-    URL.revokeObjectURL(url);
   };
 
   if (!isOpen) return null;
@@ -109,10 +222,10 @@ export function TDSPreview({
           </div>
           <button
             onClick={handleDownload}
-            disabled={isGenerating}
-            style={btnOutline(isGenerating)}
+            disabled={isGenerating || !previewPdfUrl}
+            style={btnOutline(isGenerating || !previewPdfUrl)}
           >
-            <Download size={15} /> Download Preview
+            <Download size={15} /> Download Preview PDF
           </button>
         </div>
       </div>
@@ -131,10 +244,32 @@ export function TDSPreview({
             <div style={{
               background: TOKEN.surface,
               border: `1px solid ${TOKEN.border}`,
-              borderRadius: 16, padding: "40px 48px",
+              borderRadius: 16,
+              height: "calc(100vh - 250px)",
+              minHeight: 520,
               boxShadow: "0 4px 24px rgba(0,0,0,0.06)",
             }}>
-              <div dangerouslySetInnerHTML={{ __html: tdsHtml }} />
+              {previewPdfUrl ? (
+                <iframe
+                  src={`${previewPdfUrl}#toolbar=1&navpanes=0`}
+                  title={`${primaryCode} TDS Preview`}
+                  style={{ width: "100%", height: "100%", border: "none" }}
+                />
+              ) : (
+                <div
+                  style={{
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: TOKEN.textSec,
+                    fontSize: 13,
+                    fontWeight: 600,
+                  }}
+                >
+                  Unable to generate preview. Please check required fields.
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -177,98 +312,4 @@ export function TDSPreview({
       `}} />
     </div>
   );
-}
-
-// ── TDS template generator ────────────────────────────────────────────────────
-
-function generateBlankTDS(formData: ProductFormData): string {
-  const codeRows = Object.entries(formData.itemCodes || {})
-    .filter(([, v]) => v && v.trim())
-    .map(([brand, code]) => `<li><strong>${brand}</strong>: ${code}</li>`)
-    .join("");
-
-  const groupMap = new Map<string, { groupName: string; rows: string[] }>();
-  (formData.availableSpecs ?? []).forEach((spec) => {
-    const key = `${spec.specGroupId}-${spec.label}`;
-    const value = formData.specValues?.[key] ?? "";
-    if (!groupMap.has(spec.specGroupId)) {
-      groupMap.set(spec.specGroupId, { groupName: spec.specGroup, rows: [] });
-    }
-    groupMap
-      .get(spec.specGroupId)
-      ?.rows.push(
-        `<tr><td class="spec-label">${spec.label}</td><td class="spec-value">${value || "—"}</td></tr>`,
-      );
-  });
-
-  const specs = Array.from(groupMap.values())
-    .map(
-      (group) => `
-        <tr><td class="spec-group" colspan="2">${group.groupName}</td></tr>
-        ${group.rows.join("")}
-      `,
-    )
-    .join("");
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Technical Data Sheet</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; }
-    .tds-container { max-width: 800px; margin: 0 auto; }
-    .header { border-bottom: 3px solid #2563eb; padding-bottom: 1rem; margin-bottom: 2rem; }
-    .header h1 { font-size: 1.75rem; color: #1e40af; margin-bottom: 0.5rem; }
-    .header .subtitle { color: #64748b; font-size: 0.95rem; }
-    .section { margin-bottom: 2rem; }
-    .section-title { font-size: 1.25rem; font-weight: 600; color: #1e40af; margin-bottom: 1rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 0.5rem; }
-    .info-grid { display: grid; grid-template-columns: 200px 1fr; gap: 0.75rem; }
-    .info-label { font-weight: 600; color: #475569; }
-    .info-value { color: #0f172a; }
-    .specs-table { width: 100%; border-collapse: collapse; }
-    .specs-table tr { border-bottom: 1px solid #e2e8f0; }
-    .specs-table td { padding: 0.75rem 0; }
-    .spec-group { font-weight: 700; color: #1e40af; padding-top: 1rem; }
-    .spec-label { font-weight: 500; color: #475569; width: 40%; }
-    .spec-value { color: #0f172a; }
-    .codes-list { list-style: none; }
-    .codes-list li { padding: 0.5rem 0; color: #0f172a; font-family: 'Courier New', monospace; }
-    .footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 2px solid #e2e8f0; text-align: center; color: #94a3b8; font-size: 0.875rem; }
-  </style>
-</head>
-<body>
-  <div class="tds-container">
-    <div class="header">
-      <h1>Technical Data Sheet</h1>
-      <div class="subtitle">${formData.productFamilyTitle} • ${formData.productClass?.toUpperCase()}</div>
-    </div>
-    <div class="section">
-      <h2 class="section-title">Product Information</h2>
-      <div class="info-grid">
-        <div class="info-label">Description:</div>
-        <div class="info-value">${formData.itemDescription}</div>
-        <div class="info-label">Product Family:</div>
-        <div class="info-value">${formData.productFamilyTitle}</div>
-        <div class="info-label">Classification:</div>
-        <div class="info-value">${formData.productClass?.toUpperCase()}</div>
-      </div>
-    </div>
-    <div class="section">
-      <h2 class="section-title">Item Codes</h2>
-      <ul class="codes-list">${codeRows}</ul>
-    </div>
-    <div class="section">
-      <h2 class="section-title">Technical Specifications</h2>
-      <table class="specs-table"><tbody>${specs}</tbody></table>
-    </div>
-    <div class="footer">
-      <p>This is a blank template preview. Actual TDS will be generated upon publication.</p>
-      <p style="margin-top:0.5rem">Generated: ${new Date().toLocaleDateString()}</p>
-    </div>
-  </div>
-</body>
-</html>`;
 }

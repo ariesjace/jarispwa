@@ -16,11 +16,13 @@ export interface FABAction {
 export interface FABProps {
   bottomOffset?: number;
   actions?: FABAction[];
+  hidden?: boolean;
 }
 
-export function FAB({ bottomOffset = 80, actions }: FABProps) {
+export function FAB({ bottomOffset = 80, actions, hidden = false }: FABProps) {
   const [open, setOpen] = useState(false);
   const displayActions = actions || FAB_QUICK_ACTIONS;
+  if (hidden) return null;
 
   // ── Single-action mode: tap FAB → directly call the action (no menu) ──────
   const isSingleAction = displayActions.length === 1;

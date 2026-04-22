@@ -25,6 +25,8 @@ import {
   Plus,
   Download,
   Upload,
+  Loader2,
+  ExternalLink,
   Edit2,
   Trash2,
   FileText,
@@ -59,6 +61,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useProductWorkflow } from "@/lib/useProductWorkflow";
+import { useAuth } from "@/lib/useAuth";
+import { hasAccess, isReadOnlyForResource } from "@/lib/rbac";
 import { toast } from "sonner";
 import BulkUploader from "@/components/products/BulkUploader";
 import { AddProductFlow } from "@/components/products/AddProductFlow";
@@ -82,6 +86,180 @@ const getFilledItemCodes = (codes: any) =>
   Object.entries(codes)
     .filter(([, v]) => !!v)
     .map(([k, v]) => ({ label: k, code: v as string }));
+
+const getPrimaryCode = (product: any): string => {
+  const primary = getPrimaryItemCode(resolveItemCodes(product));
+  if (primary?.code) return primary.code;
+  return (
+    product?.litItemCode ||
+    product?.ecoItemCode ||
+    product?.itemCode ||
+    product?.id ||
+    "PRODUCT"
+  );
+};
+
+const safeProductFilename = (product: any): string => {
+  const code = getPrimaryCode(product);
+  return String(code).replace(/[/\\:*?"<>|]/g, "-").trim() || "PRODUCT";
+};
+
+async function downloadPdf(url: string, filename: string): Promise<void> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename.endsWith(".pdf") ? filename : `${filename}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(objectUrl);
+}
+
+function TdsPreviewModal({
+  open,
+  onOpenChange,
+  product,
+}: {
+  open: boolean;
+  onOpenChange: (value: boolean) => void;
+  product: any | null;
+}) {
+  const [downloading, setDownloading] = useState(false);
+
+  if (!open || !product) return null;
+
+  const tdsUrl = String(product.tdsFileUrl ?? "").trim();
+  const filename = `${safeProductFilename(product)}_TDS.pdf`;
+
+  const handleDownload = async () => {
+    if (!tdsUrl) return;
+    setDownloading(true);
+    try {
+      await downloadPdf(tdsUrl, filename);
+      toast.success(`${filename} downloaded.`);
+    } catch {
+      toast.error("Download failed. Open the file directly and try again.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.45)",
+        zIndex: 420,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+      }}
+      onClick={() => onOpenChange(false)}
+    >
+      <div
+        style={{
+          width: "min(1100px, 100%)",
+          height: "min(88vh, 860px)",
+          background: TOKEN.surface,
+          border: `1px solid ${TOKEN.border}`,
+          borderRadius: 16,
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "0 18px 44px rgba(0,0,0,0.22)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            padding: "14px 16px",
+            borderBottom: `1px solid ${TOKEN.border}`,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <p
+              style={{
+                margin: 0,
+                fontSize: 13,
+                fontWeight: 800,
+                color: TOKEN.textPri,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {filename}
+            </p>
+            <p style={{ margin: "2px 0 0", fontSize: 11, color: TOKEN.textSec }}>
+              Technical Data Sheet
+            </p>
+          </div>
+
+          {tdsUrl && (
+            <>
+              <a href={tdsUrl} target="_blank" rel="noopener noreferrer">
+                <button style={outlineBtnStyle}>
+                  <ExternalLink size={14} /> View
+                </button>
+              </a>
+              <button
+                style={primaryBtnStyle}
+                onClick={handleDownload}
+                disabled={downloading}
+              >
+                {downloading ? (
+                  <Loader2
+                    size={14}
+                    style={{ animation: "tds-spin 0.75s linear infinite" }}
+                  />
+                ) : (
+                  <Download size={14} />
+                )}
+                {downloading ? "Downloading..." : "Download PDF"}
+              </button>
+            </>
+          )}
+        </div>
+
+        <div style={{ flex: 1, background: TOKEN.bg }}>
+          {tdsUrl ? (
+            <iframe
+              src={`${tdsUrl}#toolbar=1&navpanes=0`}
+              style={{ width: "100%", height: "100%", border: "none" }}
+              title={`${getPrimaryCode(product)} TDS`}
+            />
+          ) : (
+            <div
+              style={{
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+                color: TOKEN.textSec,
+                padding: 20,
+              }}
+            >
+              <FileText size={28} />
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>
+                No TDS file available
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Inline styles ────────────────────────────────────────────────────────────
 
@@ -241,8 +419,17 @@ export default function AllProductsPage() {
   const [isMobile, setIsMobile] = useState(false);
 
   // ── RBAC ────────────────────────────────────────────────────────────────────
-  const { submitProductDelete, submitProductUpdate, canVerifyProducts } =
+  const { user } = useAuth();
+  const {
+    submitProductDelete,
+    submitProductUpdate,
+    canVerifyProducts,
+    canWriteProducts,
+  } =
     useProductWorkflow();
+  const canWriteProductActions = canWriteProducts();
+  const canReadProducts = hasAccess(user, "read", "products");
+  const isProductsReadOnly = isReadOnlyForResource(user, "products");
 
   // ── Table state ─────────────────────────────────────────────────────────────
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -280,6 +467,7 @@ export default function AllProductsPage() {
   // ── Delete / bulk state ─────────────────────────────────────────────────────
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [tdsPreviewProduct, setTdsPreviewProduct] = useState<any | null>(null);
 
   // ── Filter drawer state ─────────────────────────────────────────────────────
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
@@ -753,9 +941,11 @@ export default function AllProductsPage() {
   );
 
   // ── Columns ─────────────────────────────────────────────────────────────────
-  const columns = useMemo<ColumnDef<any>[]>(
-    () => [
-      {
+  const columns = useMemo<ColumnDef<any>[]>(() => {
+    const cols: ColumnDef<any>[] = [];
+
+    if (canWriteProductActions) {
+      cols.push({
         id: "select",
         header: ({ table }) => (
           <div style={{ marginLeft: 8 }}>
@@ -780,8 +970,10 @@ export default function AllProductsPage() {
         ),
         enableSorting: false,
         enableHiding: false,
-      },
-      {
+      });
+    }
+
+    cols.push({
         id: "image",
         header: "Image",
         cell: ({ row }) => {
@@ -802,8 +994,9 @@ export default function AllProductsPage() {
           );
         },
         enableSorting: false,
-      },
-      {
+      });
+
+    cols.push({
         id: "productDetails",
         header: "Product Details",
         accessorFn: (row) => `${row.name || ""} ${row.itemDescription || ""}`,
@@ -853,8 +1046,9 @@ export default function AllProductsPage() {
             </div>
           </>
         ),
-      },
-      {
+      });
+
+    cols.push({
         accessorKey: "productFamily",
         header: "Family",
         cell: ({ row }) => (
@@ -862,8 +1056,9 @@ export default function AllProductsPage() {
             {row.original.productFamily || row.original.categories || "—"}
           </span>
         ),
-      },
-      {
+      });
+
+    cols.push({
         accessorKey: "websites",
         header: "Websites",
         cell: ({ row }) => {
@@ -884,52 +1079,75 @@ export default function AllProductsPage() {
             </div>
           );
         },
-      },
-      {
+      });
+
+    cols.push({
         id: "actions",
         header: () => (
           <div style={{ textAlign: "right", paddingRight: 8 }}>Actions</div>
         ),
-        cell: ({ row }) => (
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: 4,
-              paddingRight: 8,
-            }}
-          >
-            <button
-              style={iconBtnStyle}
-              title="Edit"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleEditProduct(row.original);
+        cell: ({ row }) => {
+          const showViewTds = canReadProducts && !!row.original.tdsFileUrl;
+          const showWriteActions = canWriteProductActions;
+          if (!showViewTds && !showWriteActions) {
+            return (
+              <div style={{ textAlign: "right", paddingRight: 8, color: TOKEN.textSec }}>
+                —
+              </div>
+            );
+          }
+          return (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 4,
+                paddingRight: 8,
               }}
             >
-              <Edit2 size={15} />
-            </button>
-            {row.original.tdsFileUrl && (
-              <button style={iconBtnStyle} title="View TDS">
-                <FileText size={15} color={TOKEN.danger} />
-              </button>
-            )}
-            <button
-              style={{ ...iconBtnStyle, color: TOKEN.danger }}
-              title="Delete"
-              onClick={(e) => {
-                e.stopPropagation();
-                setDeleteTarget(row.original);
-              }}
-            >
-              <Trash2 size={15} />
-            </button>
-          </div>
-        ),
+              {showWriteActions && (
+                <button
+                  style={iconBtnStyle}
+                  title="Edit"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEditProduct(row.original);
+                  }}
+                >
+                  <Edit2 size={15} />
+                </button>
+              )}
+              {showViewTds && (
+                <button
+                  style={iconBtnStyle}
+                  title="View TDS"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTdsPreviewProduct(row.original);
+                  }}
+                >
+                  <FileText size={15} color={TOKEN.danger} />
+                </button>
+              )}
+              {showWriteActions && (
+                <button
+                  style={{ ...iconBtnStyle, color: TOKEN.danger }}
+                  title="Delete"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeleteTarget(row.original);
+                  }}
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
+            </div>
+          );
+        },
         enableSorting: false,
-      },
+      });
       // Hidden filter-only columns
-      {
+    cols.push({
         id: "productClass",
         accessorKey: "productClass",
         enableHiding: true,
@@ -942,8 +1160,8 @@ export default function AllProductsPage() {
         },
         header: () => null,
         cell: () => null,
-      },
-      {
+      });
+    cols.push({
         id: "productUsage",
         accessorFn: (row) => {
           const u = row.productUsage;
@@ -959,10 +1177,10 @@ export default function AllProductsPage() {
         },
         header: () => null,
         cell: () => null,
-      },
-    ],
-    [handleEditProduct],
-  );
+      });
+
+    return cols;
+  }, [canReadProducts, canWriteProductActions, handleEditProduct]);
 
   // ── Table instance ──────────────────────────────────────────────────────────
   const table = useReactTable({
@@ -979,6 +1197,7 @@ export default function AllProductsPage() {
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: setGlobalFilter,
     onRowSelectionChange: setRowSelection,
+    enableRowSelection: canWriteProductActions,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -986,7 +1205,12 @@ export default function AllProductsPage() {
   });
 
   const selectedRows = table.getFilteredSelectedRowModel().rows;
-  const isBulk = selectedRows.length > 0;
+  const isBulk = canWriteProductActions && selectedRows.length > 0;
+  useEffect(() => {
+    if (!canWriteProductActions) {
+      table.resetRowSelection();
+    }
+  }, [canWriteProductActions, table]);
   const activeFamilyFilter =
     (table.getColumn("productFamily")?.getFilterValue() as string) ?? "";
   const activeClassFilter =
@@ -1246,7 +1470,7 @@ export default function AllProductsPage() {
 
   const handleCardPressStart = useCallback(
     (id: string) => {
-      if (isBulk) return;
+      if (isProductsReadOnly || isBulk) return;
       longPressActiveRef.current = false;
       longPressTimerRef.current = setTimeout(() => {
         longPressActiveRef.current = true;
@@ -1257,7 +1481,7 @@ export default function AllProductsPage() {
         }
       }, 500);
     },
-    [isBulk, table],
+    [isBulk, isProductsReadOnly, table],
   );
 
   const handleCardPressEnd = useCallback(() => {
@@ -1269,6 +1493,7 @@ export default function AllProductsPage() {
 
   const handleCardTap = useCallback(
     (id: string) => {
+      if (isProductsReadOnly) return;
       if (longPressActiveRef.current) {
         longPressActiveRef.current = false;
         return;
@@ -1289,13 +1514,13 @@ export default function AllProductsPage() {
         }
       }
     },
-    [isBulk, swipingCardId, table],
+    [isBulk, isProductsReadOnly, swipingCardId, table],
   );
 
   // ── Swipe-to-actions handlers (mobile) ─────────────────────────────────────
   const handleSwipeTouchStart = useCallback(
     (e: React.TouchEvent, rowId: string) => {
-      if (isBulk) return;
+      if (isProductsReadOnly || isBulk) return;
       touchStartXRef.current = e.touches[0].clientX;
       touchStartYRef.current = e.touches[0].clientY;
       swipeDirectionRef.current = null;
@@ -1305,11 +1530,12 @@ export default function AllProductsPage() {
       setSwipeOffset(0);
       handleCardPressStart(rowId);
     },
-    [isBulk, handleCardPressStart],
+    [isBulk, isProductsReadOnly, handleCardPressStart],
   );
 
   const handleSwipeTouchMove = useCallback(
     (e: React.TouchEvent) => {
+      if (isProductsReadOnly) return;
       if (!swipeCardIdRef.current) return;
       const dx = e.touches[0].clientX - touchStartXRef.current;
       const dy = e.touches[0].clientY - touchStartYRef.current;
@@ -1328,11 +1554,12 @@ export default function AllProductsPage() {
       swipeOffsetRef.current = clamped;
       setSwipeOffset(clamped);
     },
-    [handleCardPressEnd],
+    [handleCardPressEnd, isProductsReadOnly],
   );
 
   const handleSwipeTouchEnd = useCallback(
     (product: any) => {
+      if (isProductsReadOnly) return;
       handleCardPressEnd();
       if (swipeDirectionRef.current === "h") {
         if (swipeOffsetRef.current <= -SWIPE_DELETE_THRESHOLD) {
@@ -1349,7 +1576,7 @@ export default function AllProductsPage() {
       swipeCardIdRef.current = null;
       swipeDirectionRef.current = null;
     },
-    [handleCardPressEnd, handleEditProduct],
+    [handleCardPressEnd, handleEditProduct, isProductsReadOnly],
   );
 
   const closeFilterDrawer = useCallback(() => {
@@ -1683,24 +1910,28 @@ export default function AllProductsPage() {
                     <Download size={15} /> Bulk Download TDS
                   </button>
 
-                  {/* Bulk Upload — opens the shared BulkUploader dialog */}
-                  <button
-                    style={outlineBtnStyle}
-                    onClick={() => setBulkUploaderOpen(true)}
-                  >
-                    <Upload size={15} /> Bulk Upload
-                  </button>
+                  {canWriteProductActions && (
+                    <>
+                      {/* Bulk Upload — opens the shared BulkUploader dialog */}
+                      <button
+                        style={outlineBtnStyle}
+                        onClick={() => setBulkUploaderOpen(true)}
+                      >
+                        <Upload size={15} /> Bulk Upload
+                      </button>
 
-                  <button
-                    style={primaryBtnStyle}
-                    onClick={() =>
-                      addFlowTriggerRef.current
-                        ?.querySelector("button")
-                        ?.click()
-                    }
-                  >
-                    <Plus size={15} /> Add Product
-                  </button>
+                      <button
+                        style={primaryBtnStyle}
+                        onClick={() =>
+                          addFlowTriggerRef.current
+                            ?.querySelector("button")
+                            ?.click()
+                        }
+                      >
+                        <Plus size={15} /> Add Product
+                      </button>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -1967,9 +2198,14 @@ export default function AllProductsPage() {
           const isSelected = row.getIsSelected();
           const codes = getFilledItemCodes(resolveItemCodes(product));
           const isThisSwiping = swipingCardId === row.id;
-          const currentOffset = isThisSwiping ? swipeOffset : 0;
-          const actionZoneWidth = Math.max(currentOffset, 0);
-          const deleteZoneWidth = Math.max(-currentOffset, 0);
+          const currentOffset =
+            !isProductsReadOnly && isThisSwiping ? swipeOffset : 0;
+          const actionZoneWidth = !isProductsReadOnly
+            ? Math.max(currentOffset, 0)
+            : 0;
+          const deleteZoneWidth = !isProductsReadOnly
+            ? Math.max(-currentOffset, 0)
+            : 0;
           const showActionIcon = actionZoneWidth > 40;
           const pastActionThreshold = actionZoneWidth >= SWIPE_ACTION_THRESHOLD;
           const showDeleteIcon = deleteZoneWidth > 40;
@@ -2100,17 +2336,29 @@ export default function AllProductsPage() {
                   borderTopRightRadius: deleteZoneWidth > 8 ? 0 : 16,
                   borderBottomRightRadius: deleteZoneWidth > 8 ? 0 : 16,
                 }}
-                onTouchStart={(e) => handleSwipeTouchStart(e, row.id)}
-                onTouchMove={handleSwipeTouchMove}
-                onTouchEnd={() => handleSwipeTouchEnd(product)}
-                onTouchCancel={() => {
-                  setSwipingCardId(null);
-                  setSwipeOffset(0);
-                  swipeOffsetRef.current = 0;
-                  swipeCardIdRef.current = null;
-                  swipeDirectionRef.current = null;
-                  handleCardPressEnd();
-                }}
+                onTouchStart={
+                  isProductsReadOnly
+                    ? undefined
+                    : (e) => handleSwipeTouchStart(e, row.id)
+                }
+                onTouchMove={isProductsReadOnly ? undefined : handleSwipeTouchMove}
+                onTouchEnd={
+                  isProductsReadOnly
+                    ? undefined
+                    : () => handleSwipeTouchEnd(product)
+                }
+                onTouchCancel={
+                  isProductsReadOnly
+                    ? undefined
+                    : () => {
+                        setSwipingCardId(null);
+                        setSwipeOffset(0);
+                        swipeOffsetRef.current = 0;
+                        swipeCardIdRef.current = null;
+                        swipeDirectionRef.current = null;
+                        handleCardPressEnd();
+                      }
+                }
                 onClick={() => handleCardTap(row.id)}
               >
                 <div style={{ display: "flex", gap: 16 }}>
@@ -2214,7 +2462,7 @@ export default function AllProductsPage() {
                     >
                       {product.productClass || "Standard"}
                     </span>
-                    {product.tdsFileUrl && (
+                    {canReadProducts && product.tdsFileUrl && (
                       <button
                         style={{
                           fontSize: 9,
@@ -2225,6 +2473,10 @@ export default function AllProductsPage() {
                           borderRadius: 6,
                           marginTop: "auto",
                           border: "none",
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTdsPreviewProduct(product);
                         }}
                       >
                         VIEW TDS
@@ -2240,7 +2492,7 @@ export default function AllProductsPage() {
 
       {/* ── Mobile FAB — shown when not in bulk-select mode ──────────────────
            "Bulk Import" onClick opens the shared BulkUploader dialog         */}
-      {isMobile && !isBulk && (
+      {isMobile && !isBulk && canWriteProductActions && (
         <FAB
           actions={[
             {
@@ -2643,6 +2895,14 @@ export default function AllProductsPage() {
         allSpecGroups={allSpecGroups}
       />
 
+      <TdsPreviewModal
+        open={!!tdsPreviewProduct}
+        onOpenChange={(value) => {
+          if (!value) setTdsPreviewProduct(null);
+        }}
+        product={tdsPreviewProduct}
+      />
+
       {/* ── Delete dialogs ── */}
       <DeleteToRecycleBinDialog
         open={!!deleteTarget}
@@ -2675,6 +2935,7 @@ export default function AllProductsPage() {
       <style
         dangerouslySetInnerHTML={{
           __html: `
+        @keyframes tds-spin { to { transform: rotate(360deg); } }
         .desktop-view { display: none !important; }
         .mobile-view { display: flex; }
         @media (min-width: 1024px) {

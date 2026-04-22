@@ -160,6 +160,15 @@ export const canWrite = (u: RBACUser | null | undefined, r: string) =>
 export const canVerify = (u: RBACUser | null | undefined, r: string) =>
   hasAccess(u, "verify", r);
 
+/** Is this user read-only for a specific resource? */
+export function isReadOnlyForResource(
+  user: RBACUser | null | undefined,
+  resource: string,
+): boolean {
+  if (!user) return true;
+  return hasAccess(user, "read", resource) && !hasAccess(user, "write", resource);
+}
+
 /** Does this user require approval before writes are executed? */
 export function requiresApproval(
   user: RBACUser | null | undefined,
