@@ -85,7 +85,7 @@ interface ParsedProduct {
   ecoItemCode: string;
   litItemCode: string;
   productFamily: string;
-  productClass: string;
+  productClass: UploadProductClass;
   productUsage: string[];
   brand: TdsBrand;
   mainImageUrl: string;
@@ -115,6 +115,69 @@ interface ImportStats {
 type PreviewTab = "files" | "categories" | "products";
 type Step = "idle" | "preview" | "importing" | "done" | "cancelled";
 type LogType = "ok" | "err" | "skip" | "info" | "warn";
+type UploadProductClass =
+  | "spf"
+  | "standard"
+  | "non-standard"
+  | "usl"
+  | "";
+
+const PRODUCT_CLASS_OPTIONS: {
+  value: Exclude<UploadProductClass, "">;
+  label: string;
+  description: string;
+  activeTone: { border: string; bg: string; text: string };
+}[] = [
+  {
+    value: "spf",
+    label: "SPF",
+    description: "Special product family items",
+    activeTone: { border: "#8b5cf6", bg: "#f5f3ff", text: "#6d28d9" },
+  },
+  {
+    value: "standard",
+    label: "Standard",
+    description: "Regular inventory items",
+    activeTone: { border: "#64748b", bg: "#f8fafc", text: "#334155" },
+  },
+  {
+    value: "non-standard",
+    label: "Non-Standard",
+    description: "Custom and special-order items",
+    activeTone: { border: "#f59e0b", bg: "#fffbeb", text: "#b45309" },
+  },
+  {
+    value: "usl",
+    label: "USL",
+    description: "USL-classified catalog items",
+    activeTone: { border: "#0ea5e9", bg: "#f0f9ff", text: "#0369a1" },
+  },
+];
+
+function withAlpha(hex: string, alpha: number) {
+  const normalized = hex.replace("#", "");
+  const fullHex =
+    normalized.length === 3
+      ? normalized
+          .split("")
+          .map((char) => char + char)
+          .join("")
+      : normalized;
+
+  const r = Number.parseInt(fullHex.slice(0, 2), 16);
+  const g = Number.parseInt(fullHex.slice(2, 4), 16);
+  const b = Number.parseInt(fullHex.slice(4, 6), 16);
+
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function getProductClassLabel(productClass: UploadProductClass) {
+  if (productClass === "") return "Use Excel Value";
+  return (
+    PRODUCT_CLASS_OPTIONS.find((option) => option.value === productClass)
+      ?.label ?? productClass
+  );
+}
 
 // ─── Column header maps ───────────────────────────────────────────────────────
 
@@ -155,8 +218,16 @@ const ITEM_CODE_HEADER_MAP: Record<string, ItemCodeBrand> = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function normaliseProductClass(raw: string): "spf" | "standard" | "" {
+function normaliseProductClass(raw: string): UploadProductClass {
   const s = raw.toLowerCase().trim();
+  if (
+    s === "non-standard" ||
+    s === "non standard" ||
+    s.includes("non-standard") ||
+    s.includes("non standard")
+  )
+    return "non-standard";
+  if (s === "usl" || s.includes("usl")) return "usl";
   if (s === "spf" || s.includes("spf")) return "spf";
   if (s === "standard" || s.includes("standard")) return "standard";
   return "";
@@ -1154,6 +1225,11 @@ export default function BulkUploader({
   const [currentItem, setCurrentItem] = useState("");
   const [step, setStep] = useState<Step>("idle");
   const [activeTab, setActiveTab] = useState<PreviewTab>("files");
+  const [isCompact, setIsCompact] = useState(false);
+  const [isPhone, setIsPhone] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [selectedProductClass, setSelectedProductClass] =
+    useState<UploadProductClass>("");
   const [uploadedFiles, setUploadedFiles] = useState<
     {
       name: string;
@@ -1170,6 +1246,17 @@ export default function BulkUploader({
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
+
+  useEffect(() => {
+    const updateLayout = () => {
+      const width = window.innerWidth;
+      setIsCompact(width < 768);
+      setIsPhone(width < 480);
+    };
+    updateLayout();
+    window.addEventListener("resize", updateLayout);
+    return () => window.removeEventListener("resize", updateLayout);
+  }, []);
 
   const addLog = useCallback((type: LogType, msg: string) => {
     setLogs((prev) => [
@@ -1240,6 +1327,7 @@ export default function BulkUploader({
 
   const handleCancel = () => {
     cancelledRef.current = true;
+    setIsCancelling(true);
     addLog(
       "warn",
       "⚠️  Cancellation requested — stopping after current item...",
@@ -1249,8 +1337,13 @@ export default function BulkUploader({
   const runExcelImport = async () => {
     const allProducts = uploadedFiles.flatMap((f) => f.products);
     if (!allProducts.length) return;
+    const classModeLabel =
+      selectedProductClass === ""
+        ? "from Excel column"
+        : getProductClassLabel(selectedProductClass);
 
     cancelledRef.current = false;
+    setIsCancelling(false);
     setImporting(true);
     setStep("importing");
     setProgress(0);
@@ -1262,7 +1355,7 @@ export default function BulkUploader({
     });
     addLog(
       "info",
-      `🚀 Starting JARIS import of ${allProducts.length} products from ${uploadedFiles.length} file(s)...`,
+      `🚀 Starting JARIS import of ${allProducts.length} products from ${uploadedFiles.length} file(s) — class: ${classModeLabel}...`,
     );
 
     const allSpecGroups: Record<string, Set<string>> = {};
@@ -1342,6 +1435,7 @@ export default function BulkUploader({
       }
 
       const p = allProducts[i];
+      const productClass = selectedProductClass || p.productClass || "";
       const displayCode =
         getFilledItemCodes(p.itemCodes)
           .map(({ brand, code }) => `${brand}:${code}`)
@@ -1419,7 +1513,7 @@ export default function BulkUploader({
           .replace(/[^a-z0-9]+/g, "-");
 
         const docRef = await addDoc(collection(db, "products"), {
-          productClass: p.productClass,
+          productClass,
           itemDescription: p.itemDescription,
           shortDescription: "",
           slug,
@@ -1576,9 +1670,11 @@ export default function BulkUploader({
     setStep("idle");
     setLogs([]);
     setUploadedFiles([]);
+    setSelectedProductClass("");
     setStats({ total: 0, success: 0, failed: 0, skipped: 0 });
     setProgress(0);
     setCurrentItem("");
+    setIsCancelling(false);
     cancelledRef.current = false;
   };
 
@@ -1611,6 +1707,7 @@ export default function BulkUploader({
     (s, f) => s + f.warnings.length,
     0,
   );
+  const selectedProductClassLabel = getProductClassLabel(selectedProductClass);
 
   const STEPS = ["idle", "preview", "importing", "done"] as const;
 
@@ -1678,9 +1775,9 @@ export default function BulkUploader({
                 inset: 0,
                 zIndex: 201,
                 display: "flex",
-                alignItems: "center",
+                alignItems: isCompact ? "stretch" : "center",
                 justifyContent: "center",
-                padding: 24,
+                padding: isPhone ? 0 : isCompact ? 8 : 24,
                 pointerEvents: "none",
               }}
             >
@@ -1693,10 +1790,19 @@ export default function BulkUploader({
                 style={{
                   pointerEvents: "auto",
                   width: "100%",
-                  maxWidth: 760,
-                  height: "88vh",
+                  maxWidth: isCompact ? "100%" : 760,
+                  height: isPhone
+                    ? "100dvh"
+                    : isCompact
+                      ? "calc(100dvh - 16px)"
+                      : "88vh",
+                  maxHeight: isPhone
+                    ? "100dvh"
+                    : isCompact
+                      ? "calc(100dvh - 16px)"
+                      : "88vh",
                   background: TOKEN.surface,
-                  borderRadius: 20,
+                  borderRadius: isPhone ? 0 : isCompact ? 14 : 20,
                   border: `1px solid ${TOKEN.border}`,
                   boxShadow: "0 24px 64px -12px rgba(15,23,42,0.24)",
                   display: "flex",
@@ -1707,7 +1813,7 @@ export default function BulkUploader({
                 {/* ── Header ── */}
                 <div
                   style={{
-                    padding: "20px 24px 14px",
+                    padding: isCompact ? "16px 14px 12px" : "20px 24px 14px",
                     borderBottom: `1px solid ${TOKEN.border}`,
                     flexShrink: 0,
                   }}
@@ -1715,19 +1821,24 @@ export default function BulkUploader({
                   <div
                     style={{
                       display: "flex",
-                      alignItems: "center",
+                      alignItems: isCompact ? "flex-start" : "center",
                       justifyContent: "space-between",
                       gap: 12,
-                      marginBottom: 12,
+                      marginBottom: isCompact ? 10 : 12,
                     }}
                   >
                     <div
-                      style={{ display: "flex", alignItems: "center", gap: 12 }}
+                      style={{
+                        display: "flex",
+                        alignItems: isCompact ? "flex-start" : "center",
+                        gap: 10,
+                        minWidth: 0,
+                      }}
                     >
                       <div
                         style={{
-                          width: 38,
-                          height: 38,
+                          width: isCompact ? 34 : 38,
+                          height: isCompact ? 34 : 38,
                           borderRadius: 10,
                           background: `${TOKEN.primary}12`,
                           display: "flex",
@@ -1742,7 +1853,7 @@ export default function BulkUploader({
                         <p
                           style={{
                             margin: 0,
-                            fontSize: 15,
+                            fontSize: isCompact ? 14 : 15,
                             fontWeight: 800,
                             color: TOKEN.textPri,
                           }}
@@ -1752,7 +1863,7 @@ export default function BulkUploader({
                         <p
                           style={{
                             margin: "2px 0 0",
-                            fontSize: 11,
+                            fontSize: isCompact ? 10 : 11,
                             color: TOKEN.textSec,
                           }}
                         >
@@ -1798,6 +1909,7 @@ export default function BulkUploader({
                     style={{
                       display: "flex",
                       alignItems: "center",
+                      flexWrap: "wrap",
                       gap: 6,
                       fontSize: 11,
                       fontWeight: 500,
@@ -1854,10 +1966,14 @@ export default function BulkUploader({
                     <div style={{ height: "100%", overflowY: "auto" }}>
                       <div
                         style={{
-                          padding: "20px 24px",
+                          padding: isPhone
+                            ? "12px 12px 16px"
+                            : isCompact
+                              ? "14px 14px 18px"
+                              : "20px 24px",
                           display: "flex",
                           flexDirection: "column",
-                          gap: 16,
+                          gap: isCompact ? 14 : 16,
                         }}
                       >
                         {/* Multi-brand info banner */}
@@ -1866,15 +1982,15 @@ export default function BulkUploader({
                             display: "flex",
                             alignItems: "flex-start",
                             gap: 10,
-                            padding: "12px 14px",
+                            padding: isPhone ? "11px 12px" : "12px 14px",
                             borderRadius: 12,
-                            border: "1px solid #bfdbfe",
-                            background: "#eff6ff",
+                            border: `1px solid ${withAlpha(TOKEN.primary, 0.2)}`,
+                            background: withAlpha(TOKEN.primary, 0.07),
                           }}
                         >
                           <Info
                             size={14}
-                            color="#2563eb"
+                            color={TOKEN.primary}
                             style={{ flexShrink: 0, marginTop: 1 }}
                           />
                           <div>
@@ -1883,7 +1999,7 @@ export default function BulkUploader({
                                 margin: "0 0 4px",
                                 fontSize: 12,
                                 fontWeight: 700,
-                                color: "#1e40af",
+                                color: TOKEN.primary,
                               }}
                             >
                               Multi-brand item codes supported
@@ -1892,7 +2008,7 @@ export default function BulkUploader({
                               style={{
                                 margin: "0 0 6px",
                                 fontSize: 11,
-                                color: "#1e40af",
+                                color: TOKEN.primary,
                                 opacity: 0.8,
                               }}
                             >
@@ -1937,7 +2053,7 @@ export default function BulkUploader({
                               style={{
                                 margin: "5px 0 0",
                                 fontSize: 10,
-                                color: "#1e40af",
+                                color: TOKEN.primary,
                                 opacity: 0.7,
                               }}
                             >
@@ -1952,15 +2068,19 @@ export default function BulkUploader({
                           style={{
                             border: `2px dashed ${isDragActive ? TOKEN.primary : TOKEN.border}`,
                             borderRadius: 16,
-                            padding: "48px 24px",
+                            padding: isPhone
+                              ? "26px 12px"
+                              : isCompact
+                                ? "32px 14px"
+                                : "48px 24px",
                             display: "flex",
                             flexDirection: "column",
                             alignItems: "center",
                             justifyContent: "center",
-                            gap: 14,
+                            gap: isPhone ? 10 : isCompact ? 12 : 14,
                             cursor: "pointer",
                             background: isDragActive
-                              ? `${TOKEN.primary}06`
+                              ? withAlpha(TOKEN.primary, 0.06)
                               : TOKEN.bg,
                             transition: "all 0.2s",
                           }}
@@ -1968,9 +2088,9 @@ export default function BulkUploader({
                           <input {...getInputProps()} />
                           <div
                             style={{
-                              width: 56,
-                              height: 56,
-                              borderRadius: 16,
+                              width: isPhone ? 44 : isCompact ? 48 : 56,
+                              height: isPhone ? 44 : isCompact ? 48 : 56,
+                              borderRadius: isPhone ? 12 : isCompact ? 14 : 16,
                               background: isDragActive
                                 ? TOKEN.primary
                                 : TOKEN.surface,
@@ -1998,7 +2118,7 @@ export default function BulkUploader({
                             <p
                               style={{
                                 margin: 0,
-                                fontSize: 14,
+                                fontSize: isCompact ? 13 : 14,
                                 fontWeight: 700,
                                 color: TOKEN.textPri,
                               }}
@@ -2010,7 +2130,7 @@ export default function BulkUploader({
                             <p
                               style={{
                                 margin: "4px 0 0",
-                                fontSize: 12,
+                                fontSize: isCompact ? 11 : 12,
                                 color: TOKEN.textSec,
                               }}
                             >
@@ -2026,6 +2146,232 @@ export default function BulkUploader({
                               </span>{" "}
                               — accepts multiple .xlsx files
                             </p>
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            borderRadius: 12,
+                            border: `1px solid ${TOKEN.border}`,
+                            background: TOKEN.surface,
+                            overflow: "hidden",
+                            boxShadow: `0 10px 30px ${withAlpha(TOKEN.textPri, 0.04)}`,
+                          }}
+                        >
+                          <div
+                            style={{
+                              padding: "10px 14px",
+                              borderBottom: `1px solid ${TOKEN.border}`,
+                              background: TOKEN.bg,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: 20,
+                                height: 20,
+                                borderRadius: "50%",
+                                background: TOKEN.primary,
+                                color: "#fff",
+                                fontSize: 10,
+                                fontWeight: 800,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                              }}
+                            >
+                              2
+                            </div>
+                            <p
+                              style={{
+                                margin: 0,
+                                fontSize: 13,
+                                fontWeight: 700,
+                                color: TOKEN.textPri,
+                              }}
+                            >
+                              Set Product Class (Optional Override)
+                            </p>
+                          </div>
+                          <div
+                            style={{
+                              padding: isPhone ? "12px" : "12px 14px",
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 10,
+                            }}
+                          >
+                            <p
+                              style={{
+                                margin: 0,
+                                fontSize: 11,
+                                color: TOKEN.textSec,
+                              }}
+                            >
+                              This applies to all imported rows. Leave as{" "}
+                              <span
+                                style={{ fontWeight: 700, color: TOKEN.textPri }}
+                              >
+                                Use Excel Value
+                              </span>{" "}
+                              to keep each row&apos;s class from the sheet.
+                            </p>
+                            <div
+                              style={{
+                                display: "flex",
+                                flexWrap: "wrap",
+                                alignItems: "center",
+                                gap: 6,
+                              }}
+                            >
+                              <span
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  padding: "4px 8px",
+                                  borderRadius: 999,
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  border: `1px solid ${withAlpha(TOKEN.primary, 0.18)}`,
+                                  background: withAlpha(TOKEN.primary, 0.06),
+                                  color: TOKEN.primary,
+                                }}
+                              >
+                                Selected: {selectedProductClassLabel}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  color: TOKEN.textSec,
+                                }}
+                              >
+                                {selectedProductClass === ""
+                                  ? "Per-row value from Excel"
+                                  : "Applied to every imported row"}
+                              </span>
+                            </div>
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: isPhone
+                                  ? "1fr"
+                                  : isCompact
+                                    ? "repeat(2, minmax(0, 1fr))"
+                                  : "repeat(auto-fit, minmax(170px, 1fr))",
+                                gap: 8,
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => setSelectedProductClass("")}
+                                style={{
+                                  borderRadius: 10,
+                                  border:
+                                    selectedProductClass === ""
+                                      ? `2px solid ${TOKEN.primary}`
+                                      : `1px solid ${TOKEN.border}`,
+                                  background:
+                                    selectedProductClass === ""
+                                      ? `${TOKEN.primary}10`
+                                      : TOKEN.surface,
+                                  color:
+                                    selectedProductClass === ""
+                                      ? TOKEN.primary
+                                      : TOKEN.textSec,
+                                  textAlign: "left",
+                                  padding: isPhone ? "12px" : "10px 11px",
+                                  cursor: "pointer",
+                                  transition: "all 0.15s",
+                                  minHeight: isPhone ? 72 : 68,
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  justifyContent: "center",
+                                  gap: 4,
+                                  boxShadow:
+                                    selectedProductClass === ""
+                                      ? `0 10px 24px ${withAlpha(TOKEN.primary, 0.12)}`
+                                      : "none",
+                                }}
+                              >
+                                <p
+                                  style={{
+                                    margin: 0,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  Use Excel Value
+                                </p>
+                                <p
+                                  style={{
+                                    margin: "3px 0 0",
+                                    fontSize: 10,
+                                    opacity: 0.8,
+                                  }}
+                                >
+                                  Read PRODUCT CLASS from each row
+                                </p>
+                              </button>
+
+                              {PRODUCT_CLASS_OPTIONS.map((option) => {
+                                const active = selectedProductClass === option.value;
+                                return (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() =>
+                                      setSelectedProductClass(option.value)
+                                    }
+                                    style={{
+                                      borderRadius: 10,
+                                      border: active
+                                        ? `2px solid ${option.activeTone.border}`
+                                        : `1px solid ${TOKEN.border}`,
+                                      background: active
+                                        ? option.activeTone.bg
+                                        : TOKEN.surface,
+                                      color: active
+                                        ? option.activeTone.text
+                                        : TOKEN.textSec,
+                                      textAlign: "left",
+                                      padding: isPhone ? "12px" : "10px 11px",
+                                      cursor: "pointer",
+                                      transition: "all 0.15s",
+                                      minHeight: isPhone ? 72 : 68,
+                                      display: "flex",
+                                      flexDirection: "column",
+                                      justifyContent: "center",
+                                      gap: 4,
+                                      boxShadow: active
+                                        ? `0 10px 24px ${withAlpha(option.activeTone.border, 0.12)}`
+                                        : "none",
+                                    }}
+                                  >
+                                    <p
+                                      style={{
+                                        margin: 0,
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                      }}
+                                    >
+                                      {option.label}
+                                    </p>
+                                    <p
+                                      style={{
+                                        margin: "3px 0 0",
+                                        fontSize: 10,
+                                        opacity: 0.8,
+                                      }}
+                                    >
+                                      {option.description}
+                                    </p>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         </div>
 
@@ -2109,7 +2455,7 @@ export default function BulkUploader({
                     >
                       <div
                         style={{
-                          padding: "12px 24px",
+                          padding: isCompact ? "10px 14px" : "12px 24px",
                           borderBottom: `1px solid ${TOKEN.border}`,
                           background: TOKEN.bg,
                           flexShrink: 0,
@@ -2121,8 +2467,10 @@ export default function BulkUploader({
                         <div
                           style={{
                             display: "flex",
-                            alignItems: "center",
+                            alignItems: isCompact ? "flex-start" : "center",
+                            flexWrap: isCompact ? "wrap" : "nowrap",
                             justifyContent: "space-between",
+                            gap: isCompact ? 8 : 0,
                           }}
                         >
                           <div>
@@ -2172,7 +2520,7 @@ export default function BulkUploader({
                               cursor: "pointer",
                               color: TOKEN.textSec,
                               flexShrink: 0,
-                              marginLeft: 12,
+                              marginLeft: isCompact ? 0 : 12,
                             }}
                           >
                             <RefreshCw size={11} /> Change
@@ -2203,13 +2551,14 @@ export default function BulkUploader({
                       {/* Tabs */}
                       <div
                         style={{
-                          padding: "8px 24px",
+                          padding: isCompact ? "8px 12px" : "8px 24px",
                           borderBottom: `1px solid ${TOKEN.border}`,
                           background: TOKEN.surface,
                           display: "flex",
                           alignItems: "center",
                           gap: 4,
                           flexShrink: 0,
+                          overflowX: "auto",
                         }}
                       >
                         <TabBtn
@@ -2240,7 +2589,7 @@ export default function BulkUploader({
                         style={{
                           flex: 1,
                           minHeight: 0,
-                          padding: "16px 24px",
+                          padding: isCompact ? "14px 12px" : "16px 24px",
                         }}
                       >
                         {activeTab === "files" && (
@@ -2268,8 +2617,8 @@ export default function BulkUploader({
                         height: "100%",
                         display: "flex",
                         flexDirection: "column",
-                        padding: "20px 24px",
-                        gap: 16,
+                        padding: isCompact ? "14px 12px" : "20px 24px",
+                        gap: isCompact ? 14 : 16,
                       }}
                     >
                       {/* Progress bar */}
@@ -2356,7 +2705,9 @@ export default function BulkUploader({
                       <div
                         style={{
                           display: "grid",
-                          gridTemplateColumns: "repeat(4, 1fr)",
+                          gridTemplateColumns: isCompact
+                            ? "repeat(2, minmax(0, 1fr))"
+                            : "repeat(4, 1fr)",
                           gap: 10,
                           flexShrink: 0,
                         }}
@@ -2404,7 +2755,7 @@ export default function BulkUploader({
                             <p
                               style={{
                                 margin: 0,
-                                fontSize: 26,
+                                fontSize: isCompact ? 22 : 26,
                                 fontWeight: 900,
                                 color: s.color,
                                 fontVariantNumeric: "tabular-nums",
@@ -2515,12 +2866,14 @@ export default function BulkUploader({
                 {/* ── Footer ── */}
                 <div
                   style={{
-                    padding: "12px 24px",
+                    padding: isCompact ? "10px 12px" : "12px 24px",
                     borderTop: `1px solid ${TOKEN.border}`,
                     background: TOKEN.bg,
                     display: "flex",
-                    alignItems: "center",
+                    alignItems: isCompact ? "stretch" : "center",
                     justifyContent: "space-between",
+                    flexDirection: isCompact ? "column" : "row",
+                    gap: isCompact ? 8 : 0,
                     flexShrink: 0,
                   }}
                 >
@@ -2535,12 +2888,20 @@ export default function BulkUploader({
                       fontWeight: 600,
                       cursor: "pointer",
                       color: TOKEN.textSec,
+                      width: isCompact ? "100%" : "auto",
                     }}
                   >
                     Close
                   </button>
 
-                  <div style={{ display: "flex", gap: 8 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      width: isCompact ? "100%" : "auto",
+                      flexDirection: isCompact ? "column" : "row",
+                    }}
+                  >
                     {step === "preview" && (
                       <motion.button
                         whileHover={{ scale: 1.02 }}
@@ -2550,6 +2911,7 @@ export default function BulkUploader({
                         style={{
                           display: "flex",
                           alignItems: "center",
+                          justifyContent: "center",
                           gap: 6,
                           padding: "8px 18px",
                           borderRadius: 10,
@@ -2560,6 +2922,7 @@ export default function BulkUploader({
                           fontWeight: 700,
                           cursor: "pointer",
                           opacity: importing ? 0.7 : 1,
+                          width: isCompact ? "100%" : "auto",
                         }}
                       >
                         <Upload size={14} />
@@ -2572,10 +2935,11 @@ export default function BulkUploader({
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.97 }}
                         onClick={handleCancel}
-                        disabled={cancelledRef.current}
+                        disabled={isCancelling}
                         style={{
                           display: "flex",
                           alignItems: "center",
+                          justifyContent: "center",
                           gap: 6,
                           padding: "8px 18px",
                           borderRadius: 10,
@@ -2584,16 +2948,13 @@ export default function BulkUploader({
                           color: "#fff",
                           fontSize: 12,
                           fontWeight: 700,
-                          cursor: cancelledRef.current
-                            ? "not-allowed"
-                            : "pointer",
-                          opacity: cancelledRef.current ? 0.6 : 1,
+                          cursor: isCancelling ? "not-allowed" : "pointer",
+                          opacity: isCancelling ? 0.6 : 1,
+                          width: isCompact ? "100%" : "auto",
                         }}
                       >
                         <XCircle size={14} />
-                        {cancelledRef.current
-                          ? "Cancelling..."
-                          : "Cancel Import"}
+                        {isCancelling ? "Cancelling..." : "Cancel Import"}
                       </motion.button>
                     )}
 
@@ -2605,6 +2966,7 @@ export default function BulkUploader({
                         style={{
                           display: "flex",
                           alignItems: "center",
+                          justifyContent: "center",
                           gap: 6,
                           padding: "8px 18px",
                           borderRadius: 10,
@@ -2614,6 +2976,7 @@ export default function BulkUploader({
                           fontWeight: 600,
                           cursor: "pointer",
                           color: TOKEN.textPri,
+                          width: isCompact ? "100%" : "auto",
                         }}
                       >
                         <RefreshCw size={13} /> Import Another

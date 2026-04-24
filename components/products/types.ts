@@ -1,6 +1,6 @@
 import type { ItemCodes } from "@/types/product";
 
-export type ProductClass = "spf" | "standard" | "";
+export type ProductClass = "spf" | "standard" | "nonstandard" | "UCL" | "";
 
 export interface ProductFormData {
   productFamilyId: string;

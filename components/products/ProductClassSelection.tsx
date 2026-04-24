@@ -22,6 +22,8 @@ interface ClassOption {
 const productClasses: ClassOption[] = [
   { value: "standard", label: "Standard", description: "Regular production items with standard specifications and pricing", icon: "📦" },
   { value: "spf", label: "SPF", description: "Special Purpose Formulation items for specific applications", icon: "⚗️" },
+  { value: "nonstandard", label: "Non-Standard", description: "Tailored products with unique formulations and pricing", icon: "🛠️" },
+  { value: "UCL", label: "UCL", description: "Fully customized products designed to meet specific customer requirements", icon: "🎨" },
 ];
 
 const outlineBtn: React.CSSProperties = {
