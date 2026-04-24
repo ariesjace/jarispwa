@@ -81,6 +81,8 @@ interface SubmitAssignWebsiteOptions {
   websites: string[];
   /** Pre-built schema-transformed fields (Taskflow / Shopify only) */
   transformedFields?: Record<string, any>;
+  /** When true, transformedFields replaces the document payload instead of merging. */
+  replaceWithTransformed?: boolean;
   originPage?: string;
   source?: string;
 }
@@ -390,6 +392,7 @@ export function useProductWorkflow() {
         product,
         websites,
         transformedFields,
+        replaceWithTransformed = false,
         originPage = "/products/all-products",
         source = "all-products:assign-website",
       } = opts;
@@ -411,14 +414,21 @@ export function useProductWorkflow() {
         new Set([...existingWebsites, ...websites]),
       );
 
+      const shouldReplaceWithTransformed =
+        replaceWithTransformed &&
+        !!transformedFields &&
+        Object.keys(transformedFields).length > 0;
+
       // "after" = what the doc will look like — used by executeRequest on approval.
-      const after: Record<string, any> = {
-        ...productSnapshot,
-        websites: mergedWebsites,
-        website: mergedWebsites,
-        updatedAt: serverTimestamp(),
-        ...(transformedFields ?? {}),
-      };
+      const after: Record<string, any> = shouldReplaceWithTransformed
+        ? { ...transformedFields }
+        : {
+            ...productSnapshot,
+            websites: mergedWebsites,
+            website: mergedWebsites,
+            updatedAt: serverTimestamp(),
+            ...(transformedFields ?? {}),
+          };
 
       const meta = {
         ...resolveProductMeta(productSnapshot),
@@ -434,14 +444,18 @@ export function useProductWorkflow() {
         const batch = writeBatch(db);
         const ref = doc(db, "products", productId);
 
-        batch.update(ref, {
-          websites: arrayUnion(...websites),
-          website: arrayUnion(...websites),
-          updatedAt: serverTimestamp(),
-        });
+        if (shouldReplaceWithTransformed) {
+          batch.set(ref, after, { merge: false });
+        } else {
+          batch.update(ref, {
+            websites: arrayUnion(...websites),
+            website: arrayUnion(...websites),
+            updatedAt: serverTimestamp(),
+          });
 
-        if (transformedFields && Object.keys(transformedFields).length > 0) {
-          batch.set(ref, transformedFields, { merge: true });
+          if (transformedFields && Object.keys(transformedFields).length > 0) {
+            batch.set(ref, transformedFields, { merge: true });
+          }
         }
 
         await batch.commit();

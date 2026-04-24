@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Globe, Loader2, ShoppingBag } from "lucide-react";
+import { Check, Globe, Loader2 } from "lucide-react";
 import { TOKEN } from "@/components/layout/tokens";
 
 type WebsiteOption = {
@@ -19,7 +19,7 @@ interface AssignToWebsiteModalProps {
   onConfirm: (websites: string[]) => Promise<void>;
 }
 
-const SCHEMA_TRANSFORM_WEBSITES = new Set(["Taskflow", "Shopify"]);
+const SCHEMA_TRANSFORM_WEBSITES = new Set(["Taskflow"]);
 
 const WEBSITE_OPTIONS: WebsiteOption[] = [
   {
@@ -55,7 +55,7 @@ const WEBSITE_OPTIONS: WebsiteOption[] = [
     label: "Shopify",
     value: "Shopify",
     accent: "#16a34a",
-    transformNote: "Schema transform",
+    transformNote: null,
   },
 ];
 
@@ -327,44 +327,6 @@ export function AssignToWebsiteModal({
                     >
                       Products will keep actual item codes and apply the schema
                       transform for slug, SEO, pricing, and status defaults.
-                    </p>
-                  </div>
-                ) : null}
-                {selectedTransformSites.includes("Shopify") ? (
-                  <div
-                    style={{
-                      background: "#f0fdf4",
-                      border: "1px solid #bbf7d0",
-                      borderRadius: 10,
-                      padding: "11px 14px",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 4,
-                    }}
-                  >
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: "#166534",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 5,
-                      }}
-                    >
-                      <ShoppingBag size={13} /> Shopify schema transformation
-                    </p>
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: 11.5,
-                        color: "#15803d",
-                        lineHeight: 1.45,
-                      }}
-                    >
-                      Products tagged Shopify will have the same schema transform
-                      applied.
                     </p>
                   </div>
                 ) : null}

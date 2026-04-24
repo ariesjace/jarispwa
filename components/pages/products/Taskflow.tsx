@@ -75,6 +75,7 @@ import type {
   AvailableSpecItem,
   ProductFormData as ProductSheetData,
 } from "@/components/products/types";
+import { buildTaskflowSchemaPayload } from "@/components/products/taskflowSchemaTransform";
 import { slugify } from "@/components/products/utils";
 import { logAuditEvent } from "@/lib/logger";
 import { getPrimaryItemCode, type ItemCodes } from "@/types/product";
@@ -205,78 +206,6 @@ const matchesProductSearchQuery = (
   const haystack = buildProductSearchText(product);
   return terms.every((term) => haystack.includes(term));
 };
-
-const SCHEMA_TRANSFORM_WEBSITES = new Set(["Taskflow", "Shopify"]);
-
-function buildWebsiteTransformedFields(
-  product: any,
-  newWebsites: string[],
-): Record<string, any> {
-  const codes = resolveItemCodes(product);
-  const codeEntries = getFilledItemCodes(codes)
-    .map((entry) => String(entry.code ?? "").trim())
-    .filter(Boolean);
-  const primaryCode = codeEntries[0] || String(product?.itemCode ?? "").trim();
-  const allCodesValue = codeEntries.join(" / ");
-  const transformedItemCode = newWebsites.includes("Taskflow")
-    ? allCodesValue || primaryCode || String(product?.id ?? "")
-    : primaryCode || allCodesValue || String(product?.id ?? "");
-
-  const itemDescription = String(
-    product?.itemDescription ?? product?.name ?? "",
-  ).trim();
-  const brand = Array.isArray(product?.brands)
-    ? (product.brands[0] ?? "")
-    : Array.isArray(product?.brand)
-      ? (product.brand[0] ?? "")
-      : (product?.brand ?? "");
-  const productFamily = String(
-    product?.productFamily ?? product?.categories ?? "",
-  ).trim();
-  const rawMainImage = Array.isArray(product?.rawImage)
-    ? (product.rawImage[0] ?? "")
-    : (product?.rawImage ?? "");
-  const mainImage = String(product?.mainImage ?? rawMainImage ?? "");
-
-  return {
-    applications: Array.isArray(product?.applications) ? product.applications : [],
-    brand,
-    galleryImages: Array.isArray(product?.galleryImages)
-      ? product.galleryImages
-      : [],
-    importSource: "bulk-assign",
-    itemCodes: codes,
-    ecoItemCode: codes.ECOSHIFT ?? product?.ecoItemCode ?? "",
-    litItemCode: codes.LIT ?? product?.litItemCode ?? "",
-    itemCode: transformedItemCode,
-    mainImage,
-    name: itemDescription,
-    itemDescription,
-    productFamily,
-    qrCodeImage: product?.qrCodeImage ?? "",
-    regularPrice:
-      typeof product?.regularPrice === "number" ? product.regularPrice : 0,
-    salePrice: typeof product?.salePrice === "number" ? product.salePrice : 0,
-    seo: {
-      canonical: product?.seo?.canonical ?? "",
-      description: product?.seo?.description ?? "",
-      lastUpdated: new Date().toISOString(),
-      ogImage: mainImage || product?.seo?.ogImage || "",
-      robots: product?.seo?.robots ?? "index, follow",
-      title: product?.seo?.title ?? itemDescription,
-    },
-    shortDescription:
-      typeof product?.shortDescription === "string"
-        ? product.shortDescription
-        : "",
-    slug: slugify(itemDescription || primaryCode || String(product?.id ?? "")),
-    status: product?.status ?? "draft",
-    technicalSpecs: Array.isArray(product?.technicalSpecs)
-      ? product.technicalSpecs
-      : [],
-    updatedAt: serverTimestamp(),
-  };
-}
 
 const getPrimaryCode = (product: any): string => {
   const primary = getPrimaryItemCode(resolveItemCodes(product));
@@ -1471,17 +1400,16 @@ export default function AllProductsPage() {
 
       for (const product of products) {
         try {
-          const requiresTransform = websites.some((website) =>
-            SCHEMA_TRANSFORM_WEBSITES.has(website),
-          );
+          const requiresTransform = websites.includes("Taskflow");
           const transformedFields = requiresTransform
-            ? buildWebsiteTransformedFields(product, websites)
+            ? buildTaskflowSchemaPayload(product)
             : undefined;
 
           const result = await submitProductAssignWebsite({
             product,
             websites,
             transformedFields,
+            replaceWithTransformed: requiresTransform,
             originPage: "/products/all-products",
             source: "all-products:bulk-assign-website",
           });
