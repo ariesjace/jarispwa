@@ -65,6 +65,7 @@ import { useAuth } from "@/lib/useAuth";
 import { hasAccess, isReadOnlyForResource } from "@/lib/rbac";
 import { toast } from "sonner";
 import BulkUploader from "@/components/products/BulkUploader";
+import { AssignToWebsiteModal } from "@/components/products/AssignToWebsiteModal";
 import { AddProductFlow } from "@/components/products/AddProductFlow";
 import { ProductFormSheet } from "@/components/products/ProductFormSheet";
 import type {
@@ -81,11 +82,202 @@ import { getPrimaryItemCode, type ItemCodes } from "@/types/product";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const resolveItemCodes = (p: any) => p.itemCodes || {};
+const resolveItemCodes = (p: any) => {
+  if (p?.itemCodes && typeof p.itemCodes === "object") return p.itemCodes;
+  const fallback: ItemCodes = {};
+  const litCode = String(p?.litItemCode ?? "").trim();
+  const ecoCode = String(p?.ecoItemCode ?? "").trim();
+  if (litCode && litCode.toUpperCase() !== "N/A") fallback.LIT = litCode;
+  if (ecoCode && ecoCode.toUpperCase() !== "N/A") fallback.ECOSHIFT = ecoCode;
+  return fallback;
+};
+
 const getFilledItemCodes = (codes: any) =>
-  Object.entries(codes)
-    .filter(([, v]) => !!v)
-    .map(([k, v]) => ({ label: k, code: v as string }));
+  Object.entries(codes ?? {})
+    .map(([k, v]) => ({
+      brand: String(k ?? "")
+        .toUpperCase()
+        .trim(),
+      code: String(v ?? "").trim(),
+    }))
+    .filter(({ code }) => code.length > 0 && code.toUpperCase() !== "N/A");
+
+const ITEM_CODE_BRAND_TONES: Record<
+  string,
+  { background: string; text: string; border: string; dot: string }
+> = {
+  ECOSHIFT: {
+    background: "#dcfce7",
+    text: "#166534",
+    border: "#86efac",
+    dot: "#16a34a",
+  },
+  LIT: {
+    background: "#fef9c3",
+    text: "#854d0e",
+    border: "#fde047",
+    dot: "#ca8a04",
+  },
+  ZUMTOBEL: {
+    background: "#18181b",
+    text: "#f4f4f5",
+    border: "#3f3f46",
+    dot: "#18181b",
+  },
+  LUMERA: {
+    background: "#ffedd5",
+    text: "#9a3412",
+    border: "#fdba74",
+    dot: "#f97316",
+  },
+  OKO: {
+    background: "#dbeafe",
+    text: "#1d4ed8",
+    border: "#93c5fd",
+    dot: "#3b82f6",
+  },
+};
+
+const ITEM_CODE_LEGEND = [
+  { brand: "ECOSHIFT", label: "ECOSHIFT" },
+  { brand: "LIT", label: "LIT" },
+  { brand: "ZUMTOBEL", label: "ZUMTOBEL" },
+  { brand: "LUMERA", label: "LUMERA" },
+  { brand: "OKO", label: "OKO" },
+];
+
+const getItemCodeTone = (brand: string) =>
+  ITEM_CODE_BRAND_TONES[brand] ?? {
+    background: `${TOKEN.primary}14`,
+    text: TOKEN.primary,
+    border: `${TOKEN.primary}44`,
+    dot: TOKEN.primary,
+  };
+
+const itemCodeBadgeStyle = (brand: string): React.CSSProperties => {
+  const tone = getItemCodeTone(brand);
+  return {
+    fontSize: 9,
+    fontWeight: 800,
+    padding: "2px 6px",
+    background: tone.background,
+    color: tone.text,
+    border: `1px solid ${tone.border}`,
+    borderRadius: 4,
+    fontFamily: "monospace",
+  };
+};
+
+const normalizeSearchText = (value: unknown) =>
+  String(value ?? "")
+    .toLowerCase()
+    .trim();
+
+const buildProductSearchText = (
+  product: Record<string, unknown> | null | undefined,
+): string => {
+  const codes = getFilledItemCodes(resolveItemCodes(product)).map(
+    (entry) => entry.code,
+  );
+  return [
+    product?.itemDescription,
+    product?.name,
+    product?.productFamily,
+    product?.categories,
+    product?.itemCode,
+    product?.litItemCode,
+    product?.ecoItemCode,
+    ...codes,
+  ]
+    .map(normalizeSearchText)
+    .filter(Boolean)
+    .join(" ");
+};
+
+const matchesProductSearchQuery = (
+  product: Record<string, unknown> | null | undefined,
+  rawQuery: string,
+): boolean => {
+  const query = normalizeSearchText(rawQuery);
+  if (!query) return true;
+  const terms = query.split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+
+  const haystack = buildProductSearchText(product);
+  return terms.every((term) => haystack.includes(term));
+};
+
+const SCHEMA_TRANSFORM_WEBSITES = new Set(["Taskflow", "Shopify"]);
+
+function buildWebsiteTransformedFields(
+  product: any,
+  newWebsites: string[],
+): Record<string, any> {
+  const codes = resolveItemCodes(product);
+  const codeEntries = getFilledItemCodes(codes)
+    .map((entry) => String(entry.code ?? "").trim())
+    .filter(Boolean);
+  const primaryCode = codeEntries[0] || String(product?.itemCode ?? "").trim();
+  const allCodesValue = codeEntries.join(" / ");
+  const transformedItemCode = newWebsites.includes("Taskflow")
+    ? allCodesValue || primaryCode || String(product?.id ?? "")
+    : primaryCode || allCodesValue || String(product?.id ?? "");
+
+  const itemDescription = String(
+    product?.itemDescription ?? product?.name ?? "",
+  ).trim();
+  const brand = Array.isArray(product?.brands)
+    ? (product.brands[0] ?? "")
+    : Array.isArray(product?.brand)
+      ? (product.brand[0] ?? "")
+      : (product?.brand ?? "");
+  const productFamily = String(
+    product?.productFamily ?? product?.categories ?? "",
+  ).trim();
+  const rawMainImage = Array.isArray(product?.rawImage)
+    ? (product.rawImage[0] ?? "")
+    : (product?.rawImage ?? "");
+  const mainImage = String(product?.mainImage ?? rawMainImage ?? "");
+
+  return {
+    applications: Array.isArray(product?.applications) ? product.applications : [],
+    brand,
+    galleryImages: Array.isArray(product?.galleryImages)
+      ? product.galleryImages
+      : [],
+    importSource: "bulk-assign",
+    itemCodes: codes,
+    ecoItemCode: codes.ECOSHIFT ?? product?.ecoItemCode ?? "",
+    litItemCode: codes.LIT ?? product?.litItemCode ?? "",
+    itemCode: transformedItemCode,
+    mainImage,
+    name: itemDescription,
+    itemDescription,
+    productFamily,
+    qrCodeImage: product?.qrCodeImage ?? "",
+    regularPrice:
+      typeof product?.regularPrice === "number" ? product.regularPrice : 0,
+    salePrice: typeof product?.salePrice === "number" ? product.salePrice : 0,
+    seo: {
+      canonical: product?.seo?.canonical ?? "",
+      description: product?.seo?.description ?? "",
+      lastUpdated: new Date().toISOString(),
+      ogImage: mainImage || product?.seo?.ogImage || "",
+      robots: product?.seo?.robots ?? "index, follow",
+      title: product?.seo?.title ?? itemDescription,
+    },
+    shortDescription:
+      typeof product?.shortDescription === "string"
+        ? product.shortDescription
+        : "",
+    slug: slugify(itemDescription || primaryCode || String(product?.id ?? "")),
+    status: product?.status ?? "draft",
+    technicalSpecs: Array.isArray(product?.technicalSpecs)
+      ? product.technicalSpecs
+      : [],
+    updatedAt: serverTimestamp(),
+  };
+}
 
 const getPrimaryCode = (product: any): string => {
   const primary = getPrimaryItemCode(resolveItemCodes(product));
@@ -422,6 +614,7 @@ export default function AllProductsPage() {
   const { user } = useAuth();
   const {
     submitProductDelete,
+    submitProductAssignWebsite,
     submitProductUpdate,
     canVerifyProducts,
     canWriteProducts,
@@ -467,6 +660,7 @@ export default function AllProductsPage() {
   // ── Delete / bulk state ─────────────────────────────────────────────────────
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [assignWebsiteOpen, setAssignWebsiteOpen] = useState(false);
   const [tdsPreviewProduct, setTdsPreviewProduct] = useState<any | null>(null);
 
   // ── Filter drawer state ─────────────────────────────────────────────────────
@@ -1030,15 +1224,8 @@ export default function AllProductsPage() {
                 .map((c: any, i: number) => (
                   <span
                     key={i}
-                    style={{
-                      fontSize: 9,
-                      fontWeight: 700,
-                      padding: "2px 6px",
-                      background: `${TOKEN.primary}15`,
-                      color: TOKEN.primary,
-                      borderRadius: 4,
-                      fontFamily: "monospace",
-                    }}
+                    style={itemCodeBadgeStyle(c.brand)}
+                    title={`${c.brand}: ${c.code}`}
                   >
                     {c.code}
                   </span>
@@ -1197,6 +1384,8 @@ export default function AllProductsPage() {
     onColumnFiltersChange: setColumnFilters,
     onGlobalFilterChange: setGlobalFilter,
     onRowSelectionChange: setRowSelection,
+    globalFilterFn: (row, _columnId, filterValue) =>
+      matchesProductSearchQuery(row.original, String(filterValue ?? "")),
     enableRowSelection: canWriteProductActions,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -1263,6 +1452,59 @@ export default function AllProductsPage() {
       );
     else toast.error(`${succeeded} deleted, ${failed} failed.`);
   }, [selectedRows, submitProductDelete, table]);
+
+  const handleExecuteBulkAssignWebsite = useCallback(
+    async (websites: string[]) => {
+      const products = selectedRows.map((r) => r.original);
+      if (!products.length || websites.length === 0) return;
+
+      const t = toast.loading(
+        `${canVerifyProducts() ? "Assigning" : "Submitting"} ${products.length} product${products.length !== 1 ? "s" : ""} to ${websites.join(", ")}...`,
+      );
+
+      let direct = 0;
+      let pending = 0;
+      let failed = 0;
+
+      for (const product of products) {
+        try {
+          const requiresTransform = websites.some((website) =>
+            SCHEMA_TRANSFORM_WEBSITES.has(website),
+          );
+          const transformedFields = requiresTransform
+            ? buildWebsiteTransformedFields(product, websites)
+            : undefined;
+
+          const result = await submitProductAssignWebsite({
+            product,
+            websites,
+            transformedFields,
+            originPage: "/products/all-products",
+            source: "all-products:bulk-assign-website",
+          });
+
+          if (result.mode === "pending") pending++;
+          else direct++;
+        } catch {
+          failed++;
+        }
+      }
+
+      table.resetRowSelection();
+
+      if (failed === 0) {
+        const messages: string[] = [];
+        if (direct > 0) messages.push(`${direct} assigned`);
+        if (pending > 0) messages.push(`${pending} pending approval`);
+        toast.success(messages.join(", ") || "Done.", { id: t });
+      } else {
+        toast.error(`${failed} failed. ${direct + pending} succeeded.`, {
+          id: t,
+        });
+      }
+    },
+    [canVerifyProducts, selectedRows, submitProductAssignWebsite, table],
+  );
 
   // ── Add Product submit ───────────────────────────────────────────────────────
   const handleAddProductSubmit = useCallback(
@@ -1679,6 +1921,59 @@ export default function AllProductsPage() {
           </span>
         </div>
 
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+            marginBottom: 14,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: TOKEN.textSec,
+              textTransform: "uppercase",
+              letterSpacing: "0.03em",
+            }}
+          >
+            Item Codes
+          </span>
+          {ITEM_CODE_LEGEND.map((item) => {
+            const tone = getItemCodeTone(item.brand);
+            return (
+              <span
+                key={item.brand}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 10,
+                  fontWeight: 800,
+                  borderRadius: 999,
+                  padding: "3px 8px",
+                  background: tone.background,
+                  color: tone.text,
+                  border: `1px solid ${tone.border}`,
+                }}
+              >
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: tone.dot,
+                    flexShrink: 0,
+                  }}
+                />
+                {item.label}
+              </span>
+            );
+          })}
+        </div>
+
         {/* Desktop bulk actions */}
         {!isMobile && isBulk && (
           <div
@@ -1711,7 +2006,12 @@ export default function AllProductsPage() {
               >
                 Cancel
               </button>
-              <button style={actionBtnStyle}>Assign Website</button>
+              <button
+                style={actionBtnStyle}
+                onClick={() => setAssignWebsiteOpen(true)}
+              >
+                Assign Website
+              </button>
               <button style={actionBtnStyle}>Generate TDS</button>
               <button
                 style={{
@@ -1808,7 +2108,11 @@ export default function AllProductsPage() {
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem>Assign Website</DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => setAssignWebsiteOpen(true)}
+                    >
+                      Assign Website
+                    </DropdownMenuItem>
                     <DropdownMenuItem>Generate TDS</DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
@@ -1855,7 +2159,7 @@ export default function AllProductsPage() {
               />
               <input
                 type="text"
-                placeholder="Search products..."
+                placeholder="Search item description, family, or item code..."
                 value={searchInput}
                 onChange={(e) => handleSearchChange(e.target.value)}
                 style={{
@@ -2411,15 +2715,8 @@ export default function AllProductsPage() {
                           {codes.slice(0, 3).map((c: any, i: number) => (
                             <span
                               key={i}
-                              style={{
-                                fontSize: 9,
-                                fontWeight: 800,
-                                padding: "2px 6px",
-                                background: `${TOKEN.primary}15`,
-                                color: TOKEN.primary,
-                                borderRadius: 4,
-                                fontFamily: "monospace",
-                              }}
+                              style={itemCodeBadgeStyle(c.brand)}
+                              title={`${c.brand}: ${c.code}`}
                             >
                               {c.code}
                             </span>
@@ -2901,6 +3198,13 @@ export default function AllProductsPage() {
           if (!value) setTdsPreviewProduct(null);
         }}
         product={tdsPreviewProduct}
+      />
+
+      <AssignToWebsiteModal
+        open={assignWebsiteOpen}
+        onOpenChange={setAssignWebsiteOpen}
+        selectedCount={selectedRows.length}
+        onConfirm={handleExecuteBulkAssignWebsite}
       />
 
       {/* ── Delete dialogs ── */}
