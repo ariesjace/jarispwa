@@ -6,6 +6,7 @@ import { CMSLayout, TOKEN } from "@/components/layout";
 import { Package } from "lucide-react";
 import AllProductsPage from "@/components/pages/products/AllProducts";
 import ProductRequestsPage from "@/components/pages/products/ProductRequests";
+import TaskflowPage from "@/components/pages/products/Taskflow";
 import FamiliesPage from "@/components/pages/products/Families";
 import { useAuth } from "@/lib/useAuth";
 import { hasAccess } from "@/lib/rbac";
@@ -28,6 +29,8 @@ function ProductsSection({ tab }: { tab: string }) {
   switch (tab) {
     case "All Products":
       return <AllProductsPage />;
+    case "Taskflow":
+      return <TaskflowPage />;
     case "Families":
       return <FamiliesPage />;
     case "Requests":
